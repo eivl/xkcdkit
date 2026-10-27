@@ -1,0 +1,57 @@
+[project]
+name = "xkcdkit"
+version = "0.1.0"
+description = "xkcd comics as a Python library, a CLI and a TUI, with a local cache and explainxkcd explanations."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Eivind Teig", email = "eivind@dchub.no" }]
+requires-python = ">=3.12"
+keywords = ["xkcd", "comics", "cli", "tui", "textual"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Terminals",
+  "Typing :: Typed",
+]
+dependencies = [
+  "httpx2>=2.16",
+  "pydantic>=2.11",
+  "typer>=0.17",
+  "textual>=6.0",
+  "textual-image>=0.14",
+  "rapidfuzz>=3.13",
+  "platformdirs>=4.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/eivl/xkcdkit"
+Repository = "https://github.com/eivl/xkcdkit"
+Changelog = "https://github.com/eivl/xkcdkit/blob/main/CHANGELOG.md"
+
+[project.scripts]
+xkcd = "xkcdkit.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0",
+  "pytest-asyncio>=1.2",
+  "coverage[toml]>=7.10",
+  "ruff>=0.14",
+  "mypy>=1.18",
+  "flake8>=7.3",
+  "tox>=4.30",
+  "tox-uv>=1.28",
+  "pre-commit>=4.3",
+  "zizmor>=1.20",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
