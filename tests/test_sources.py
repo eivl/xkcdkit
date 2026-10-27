@@ -1,6 +1,7 @@
 """Tests for the HTTP fetchers, served by an in-memory mock of both sites."""
 
 import json
+import time
 from pathlib import Path
 
 import httpx2
@@ -27,6 +28,7 @@ class FakeSites:
     def __init__(self) -> None:
         """Start with no requests seen."""
         self.requests: list[str] = []
+        self.times: list[tuple[str, float]] = []
         self.latest = json.loads((FIXTURES / "latest.json").read_text(encoding="utf-8"))
         self.comic = json.loads((FIXTURES / "614.json").read_text(encoding="utf-8"))
         self.explain = json.loads((FIXTURES / "explain_614.json").read_text(encoding="utf-8"))
@@ -42,6 +44,7 @@ class FakeSites:
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         """Answer a request the way the real sites would."""
         self.requests.append(str(request.url))
+        self.times.append((request.url.host, time.monotonic()))
         assert request.headers["user-agent"].startswith("xkcdkit/")
         host, path = request.url.host, request.url.path
         if host == "imgs.xkcd.com":

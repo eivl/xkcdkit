@@ -192,3 +192,26 @@ def test_config_command_prints_path_and_creates_file(monkeypatch: pytest.MonkeyP
     assert "created" in runner.invoke(app, ["config", "--init"]).output
     assert path.exists()
     assert "exists" in runner.invoke(app, ["config", "--init"]).output
+
+
+def test_ctrl_c_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A keyboard interrupt gives a short stderr note and exit code 130, no traceback."""
+
+    def interrupted(db: str | None) -> AsyncXKCD:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("xkcdkit.cli.open_client", interrupted)
+    result = runner.invoke(app, ["sync", "--full"])
+    assert result.exit_code == 130
+    assert result.stdout == ""
+    assert "saved" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_sync_full_no_explain(fake_client: FakeSites) -> None:
+    """Sync --full --no-explain skips explainxkcd entirely."""
+    fake_client.latest["num"] = 4
+    result = runner.invoke(app, ["sync", "--full", "--no-explain"])
+    assert result.exit_code == 0
+    assert "3 new comics" in result.output
+    assert sum("explainxkcd" in url for url in fake_client.requests) == 1  # only the latest comic

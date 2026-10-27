@@ -129,10 +129,10 @@ class Store:
         return str(row[0]) if row else None
 
     def stale(self, max_age: timedelta) -> list[int]:
-        """Numbers of comics older than ``max_age`` or still missing an explanation."""
+        """Numbers of comics older than ``max_age`` or without explanation data yet."""
         cutoff = (utc_now() - max_age).isoformat()
         rows = self.db.execute(
-            "SELECT num FROM comics WHERE synced_at < ? OR explanation_missing ORDER BY num",
+            "SELECT num FROM comics WHERE synced_at < ? OR explanation IS NULL ORDER BY num",
             (cutoff,),
         )
         return [row[0] for row in rows]

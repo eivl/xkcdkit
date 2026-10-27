@@ -9,6 +9,13 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def isolated_user_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep every test away from the developer's real settings file and database."""
+    monkeypatch.setenv("XKCDKIT_CONFIG", str(tmp_path / "isolated-config.toml"))
+    monkeypatch.setenv("XKCDKIT_DB", str(tmp_path / "isolated.sqlite3"))
+
+
 def load_json(name: str) -> dict[str, Any]:
     """Read a JSON fixture by file name."""
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))  # type: ignore[no-any-return]

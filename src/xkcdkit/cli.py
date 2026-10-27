@@ -69,6 +69,12 @@ def run(ctx: typer.Context, action: Callable[[AsyncXKCD], Awaitable[Any]]) -> An
     except XKCDError as exc:
         errors.print(f"error: {exc}", markup=False, highlight=False)
         raise typer.Exit(1) from exc
+    except KeyboardInterrupt:
+        errors.print(
+            "Interrupted. Everything fetched so far is saved; run the command again to continue.",
+            soft_wrap=True,
+        )
+        raise typer.Exit(130) from None
 
 
 @dataclass
@@ -173,11 +179,17 @@ def explain(ctx: typer.Context, num: Num, json: Json = False) -> None:
 def sync(
     ctx: typer.Context,
     full: Annotated[bool, typer.Option("--full", help="Fetch every comic and explanation.")] = False,
+    no_explain: Annotated[
+        bool, typer.Option("--no-explain", help="Skip explainxkcd for now (much faster); resync fills it in.")
+    ] = False,
 ) -> None:
     """Refresh the archive index and latest comic; with --full, download everything."""
     with console.status("Syncing") as status:
         added: int = run(
-            ctx, lambda xk: xk.sync(full, lambda done, total: status.update(f"Syncing {done}/{total}"))
+            ctx,
+            lambda xk: xk.sync(
+                full, lambda done, total: status.update(f"Syncing {done}/{total}"), explain=not no_explain
+            ),
         )
     console.print(f"{added} new comic{'s' if added != 1 else ''} cached.")
 

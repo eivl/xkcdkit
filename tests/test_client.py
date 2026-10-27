@@ -1,5 +1,7 @@
 """Tests for the async client and its sync wrapper."""
 
+import asyncio
+import itertools
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -183,3 +185,49 @@ async def test_default_client_and_db(monkeypatch: pytest.MonkeyPatch, db: Path) 
     async with AsyncXKCD() as xk:
         assert xk.store.path == db
         assert xk.http.headers["user-agent"].startswith("xkcdkit/")
+
+
+async def test_full_sync_overlaps_xkcd_fetches_and_paces_explainxkcd(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """xkcd.com is fetched concurrently; explainxkcd sees one request per explain_delay."""
+    sites.latest["num"] = 4
+    xk.explain_delay = 0.15
+    await xk.sync(full=True)
+    explains = [t for host, t in sites.times if host == "www.explainxkcd.com"]
+    gaps = [b - a for a, b in itertools.pairwise(explains)]
+    assert len(explains) == 3  # latest (4), then 1 and 2; 3 does not exist
+    assert all(gap >= 0.14 for gap in gaps)
+    comics = [t for host, t in sites.times if host == "xkcd.com"]
+    assert max(comics) < explains[1] + 0.05  # all comic fetches done while the first explanation waits
+
+
+async def test_full_sync_without_explanations_is_completed_later(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """--no-explain stores comics with no explanation data; resync and get() fill them in."""
+    sites.latest["num"] = 4
+    assert await xk.sync(full=True, explain=False) == 3
+    stored = xk.store.get(1)
+    assert stored is not None
+    assert stored.explanation is None
+    assert stored.explanation_missing is False
+    assert sum(host == "www.explainxkcd.com" for host, _ in sites.times) == 1  # only the latest comic
+    assert set(xk.store.stale(timedelta(days=30))) == {1, 2, 4}
+    assert await xk.resync() == 3
+    # explainxkcd was consulted for each; the fake has no pages for them, so they are now flagged
+    assert all(getattr(xk.store.get(n), "explanation_missing", None) is True for n in (1, 2, 4))
+
+
+async def test_cancelled_sync_keeps_what_was_stored(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """Cancelling a full sync (what Ctrl-C does) leaves every finished comic committed."""
+    sites.latest["num"] = 4
+    xk.explain_delay = 0.2
+    task: asyncio.Task[int] | None = None
+
+    def stop_after_two(done: int, total: int) -> None:
+        if done == 2 and task is not None:
+            task.cancel()
+
+    task = asyncio.create_task(xk.sync(full=True, progress=stop_after_two))
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    with Store(xk.store.path) as fresh_store:
+        assert fresh_store.has(1)
+        assert not fresh_store.has(2)

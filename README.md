@@ -81,7 +81,8 @@ xkcd random              # a random comic
 xkcd search "woodpecker" # fuzzy search over cached titles, alt text, transcripts and explanations
 xkcd explain 614         # just the explanation, as plain text
 xkcd sync                # refresh the archive index and the latest comic
-xkcd sync --full         # download every comic and explanation (about an hour, see below)
+xkcd sync --full         # download every comic and explanation (under an hour, see below)
+xkcd sync --full --no-explain  # comics only, a minute or two; explanations come later
 xkcd resync              # re-fetch comics older than 30 days or still missing an explanation
 xkcd tui                 # open the browser
 ```
@@ -239,10 +240,23 @@ async def xkcd(ctx, num: int):
 ### Being polite to explainxkcd
 
 explainxkcd is a volunteer-run wiki. Its robots policy asks for one request
-per second, so a full sync fetches one explanation per second and sends a
-User-Agent that names this project and its repository. A complete first
-`sync --full` therefore takes about an hour. On-demand lookups are not
-delayed.
+per second, so a full sync sends at most one explainxkcd request per second
+and a User-Agent that names this project and its repository. xkcd.com has no
+such limit and is fetched by several workers at once, so explanations are the
+pacing item: a complete first `sync --full` takes a little under an hour for
+the whole archive.
+
+Two ways to shorten the wait:
+
+- `xkcd sync --full --no-explain` fetches only the comics, which takes a
+  minute or two. Explanations are then filled in on demand when you open a
+  comic, or in bulk with `xkcd resync`, which is paced the same way.
+- Ctrl-C at any point is safe. Every comic is committed to the database the
+  moment it is fetched, and the next `sync --full` skips everything already
+  cached, so you can sync in several sittings.
+
+The sync walks every number from 1 to the latest comic, so it does not depend
+on the archive page. On-demand lookups are never delayed.
 
 ## Terminal image support
 

@@ -126,13 +126,14 @@ def test_meta(store: Store) -> None:
     assert store.get_meta("latest_num") == "3317"
 
 
-def test_stale_returns_old_and_missing(store: Store) -> None:
-    """Rows older than max_age or flagged missing are stale; fresh ones are not."""
+def test_stale_returns_old_missing_and_unexplained(store: Store) -> None:
+    """Rows older than max_age, flagged missing, or never explained are stale."""
     old = datetime.now(UTC) - timedelta(days=40)
     store.put(make_comic(1, synced_at=old))
     store.put(make_comic(2, explanation_missing=True))
-    store.put(make_comic(3))
-    assert store.stale(timedelta(days=30)) == [1, 2]
+    store.put(make_comic(3, explanation="==Explanation==\nText."))
+    store.put(make_comic(4))
+    assert store.stale(timedelta(days=30)) == [1, 2, 4]
 
 
 def test_search_fuzzy_title(store: Store) -> None:

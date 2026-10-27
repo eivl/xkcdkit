@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from xkcdkit.store import Store, utc_now
 
 Progress = Callable[[int, int], None]
 RETRY_MISSING_AFTER = timedelta(days=1)
+WORKERS = 8
 
 
 class AsyncXKCD:
@@ -32,7 +34,7 @@ class AsyncXKCD:
         db: Database path. Defaults to the platform user data directory or ``$XKCDKIT_DB``.
         client: An ``httpx2.AsyncClient`` to use instead of the built-in one.
         timeout: Request timeout in seconds for the built-in client.
-        explain_delay: Seconds to wait between explainxkcd requests during bulk syncs.
+        explain_delay: Minimum seconds between explainxkcd requests during bulk syncs.
     """
 
     def __init__(
@@ -48,6 +50,8 @@ class AsyncXKCD:
             timeout=timeout, headers={"User-Agent": user_agent()}, follow_redirects=True
         )
         self.explain_delay = explain_delay
+        self.explain_lock = asyncio.Lock()
+        self.last_explain = 0.0
 
     async def __aenter__(self) -> Self:
         """Enter the async context manager."""
@@ -67,6 +71,7 @@ class AsyncXKCD:
     async def complete(self, comic: Comic) -> Comic:
         """Attach the explainxkcd page when it exists and stamp the sync time."""
         found = await fetch_explanation(self.http, comic.num)
+        self.last_explain = time.monotonic()
         wikitext, revid = found if found else (None, None)
         return comic.model_copy(
             update={
@@ -126,39 +131,66 @@ class AsyncXKCD:
         self.store.put_archive(entries)
         return entries
 
-    async def sync(self, full: bool = False, progress: Progress | None = None) -> int:
+    async def sync(self, full: bool = False, progress: Progress | None = None, explain: bool = True) -> int:
         """Refresh the archive index and the latest comic; with ``full`` fetch every comic.
 
         A full sync walks every number from 1 to the latest, so it does not depend
-        on the archive page. Returns the number of comics newly added to the cache.
+        on the archive page. With ``explain=False`` it skips explainxkcd, which is
+        much faster; ``resync`` or a later ``get`` fills the explanations in.
+        Returns the number of comics newly added to the cache.
         """
         before = self.store.count()
         await self.refresh_archive()
         latest = await self.latest()
         if full:
             cached = set(self.store.nums())
-            await self.fetch_many([n for n in range(1, latest.num + 1) if n not in cached], progress)
+            nums = [n for n in range(1, latest.num + 1) if n not in cached]
+            await self.fetch_many(nums, progress, explain)
             self.store.set_meta("last_full_sync_at", utc_now().isoformat())
         self.store.set_meta("last_sync_at", utc_now().isoformat())
         return self.store.count() - before
 
     async def resync(self, max_age: timedelta = timedelta(days=30), progress: Progress | None = None) -> int:
-        """Re-fetch comics older than ``max_age`` or missing an explanation. Returns the count."""
+        """Re-fetch comics older than ``max_age`` or without explanation data. Returns the count."""
         return await self.fetch_many(self.store.stale(max_age), progress)
 
-    async def fetch_many(self, nums: list[int], progress: Progress | None) -> int:
-        """Fetch and store each comic in turn, politely paced, skipping numbers xkcd lacks."""
-        done = 0
-        for index, num in enumerate(nums, start=1):
-            try:
-                self.store.replace(await self.complete(await fetch_comic(self.http, num)))
+    async def fetch_many(self, nums: list[int], progress: Progress | None, explain: bool = True) -> int:
+        """Fetch and store comics with several workers; explainxkcd is paced to one request at a time.
+
+        xkcd.com requests overlap freely. Each stored comic is committed at once, so an
+        interrupted run keeps everything finished so far. Numbers xkcd lacks are skipped.
+        """
+        pending, done, fetched = list(reversed(nums)), 0, 0
+
+        async def worker() -> None:
+            nonlocal done, fetched
+            while pending:
+                num = pending.pop()
+                try:
+                    comic = await fetch_comic(self.http, num)
+                    if explain:
+                        await self.pace()
+                        comic = await self.complete(comic)
+                    self.store.replace(comic)
+                    fetched += 1
+                except ComicNotFound:
+                    pass
                 done += 1
-            except ComicNotFound:
-                pass
-            if progress:
-                progress(index, len(nums))
-            await asyncio.sleep(self.explain_delay)
-        return done
+                if progress:
+                    progress(done, len(nums))
+
+        async with asyncio.TaskGroup() as group:
+            for _ in range(min(WORKERS, len(nums))):
+                group.create_task(worker())
+        return fetched
+
+    async def pace(self) -> None:
+        """Wait until ``explain_delay`` has passed since the previous explainxkcd request."""
+        async with self.explain_lock:
+            wait = self.last_explain + self.explain_delay - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self.last_explain = time.monotonic()
 
 
 class XKCD:
@@ -224,9 +256,9 @@ class XKCD:
         """See ``AsyncXKCD.explain``."""
         return self.run("explain", num)  # type: ignore[no-any-return]
 
-    def sync(self, full: bool = False, progress: Progress | None = None) -> int:
+    def sync(self, full: bool = False, progress: Progress | None = None, explain: bool = True) -> int:
         """See ``AsyncXKCD.sync``."""
-        return self.run("sync", full, progress)  # type: ignore[no-any-return]
+        return self.run("sync", full, progress, explain)  # type: ignore[no-any-return]
 
     def resync(self, max_age: timedelta = timedelta(days=30), progress: Progress | None = None) -> int:
         """See ``AsyncXKCD.resync``."""
