@@ -17,7 +17,7 @@ from xkcdkit.sources import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-PNG = b"\x89PNG\r\n\x1a\n fake"
+PNG = (FIXTURES / "tiny.png").read_bytes()
 
 
 class FakeSites:
