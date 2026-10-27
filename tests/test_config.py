@@ -5,7 +5,15 @@ from pathlib import Path
 import pytest
 
 from xkcdkit import XKCDError
-from xkcdkit.config import DEFAULT_TOML, Settings, config_path, dump, load_settings, write_default
+from xkcdkit.config import (
+    DEFAULT_TOML,
+    CliSettings,
+    Settings,
+    config_path,
+    dump,
+    load_settings,
+    write_default,
+)
 
 
 def test_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -85,3 +93,20 @@ def test_default_toml_matches_the_defaults() -> None:
     import tomllib
 
     assert Settings.model_validate(tomllib.loads(DEFAULT_TOML)) == Settings()
+
+
+def test_cli_sides_follow_margin_unless_overridden() -> None:
+    """Margin sets every side (columns doubled); a set side wins; gap follows margin."""
+    assert CliSettings(margin=1).padding == (1, 2, 1, 2)
+    assert CliSettings(margin=1).gap_lines == 1
+    assert CliSettings(margin=2, left=0, gap=0).padding == (2, 4, 2, 0)
+    assert CliSettings(margin=2, left=0, gap=0).gap_lines == 0
+    assert CliSettings(margin=0, top=3).padding == (3, 0, 0, 0)
+
+
+def test_dump_omits_unset_sides() -> None:
+    """Unset per-side keys are left out rather than written as null."""
+    text = dump(Settings())
+    assert "null" not in text
+    assert "margin = 1" in text
+    assert "top" not in text

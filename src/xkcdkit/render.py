@@ -55,11 +55,15 @@ def comic_image(data: bytes, scale: float = 1.0, fit: bool = False) -> Renderabl
     return renderable
 
 
-def framed(renderables: list[RenderableType], margin: int) -> RenderableType:
-    """Stack renderables with ``margin`` blank lines above and below and twice that at the sides."""
-    if margin == 0:
-        return Group(*renderables)
-    return Padding(Group(*renderables), (margin, margin * 2))
+def framed(renderables: list[RenderableType], padding: tuple[int, int, int, int], gap: int) -> RenderableType:
+    """Stack renderables ``gap`` blank lines apart inside ``padding`` (top, right, bottom, left)."""
+    spaced: list[RenderableType] = []
+    for part in renderables:
+        spaced += [Text("")] * gap if spaced else []
+        spaced.append(part)
+    if not any(padding):
+        return Group(*spaced)
+    return Padding(Group(*spaced), padding)
 
 
 def can_draw() -> bool:

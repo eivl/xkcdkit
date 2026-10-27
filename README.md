@@ -134,6 +134,11 @@ image_pane = 3   # browser: image pane height relative to the text pane (1 to 8)
 
 [cli]
 margin = 1       # blank space around a printed comic; 0 for a tight layout
+# top = 1        # override single sides: lines above and below,
+# bottom = 1     # columns left and right, and gap = lines between
+# left = 2       # the image and the text card; unset ones follow margin
+# right = 2
+# gap = 1
 ```
 
 Command line flags always win over the file.

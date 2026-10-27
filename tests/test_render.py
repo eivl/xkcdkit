@@ -91,14 +91,13 @@ def test_can_draw_is_false_without_a_tty() -> None:
     assert can_draw() is False
 
 
-def test_framed_adds_margin_around_the_output() -> None:
-    """A margin of 1 adds a blank line above and below and two spaces on each side."""
-    lines = [line.rstrip() for line in render(framed([Text("x")], margin=1)).split("\n")]
-    assert lines[0] == ""
-    assert lines[1] == "  x"
-    assert lines[2] == ""
+def test_framed_pads_each_side_and_separates_parts() -> None:
+    """Padding is (top, right, bottom, left); gap blank lines go between the parts."""
+    out = render(framed([Text("img"), Text("card")], padding=(1, 0, 2, 3), gap=2))
+    lines = [line.rstrip() for line in out.split("\n")]
+    assert lines[:7] == ["", "   img", "", "", "   card", "", ""]
 
 
-def test_framed_zero_margin_is_tight() -> None:
-    """margin=0 leaves the output untouched."""
-    assert render(framed([Text("x")], margin=0)) == "x\n"
+def test_framed_all_zero_is_tight() -> None:
+    """No padding and no gap leaves the output untouched."""
+    assert render(framed([Text("img"), Text("card")], padding=(0, 0, 0, 0), gap=0)) == "img\ncard\n"

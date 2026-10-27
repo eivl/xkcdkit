@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -12,7 +12,7 @@ from rich.text import Text
 
 from xkcdkit import XKCDError, __version__
 from xkcdkit.client import AsyncXKCD
-from xkcdkit.config import DEFAULT_TOML, config_path, dump, load_settings, write_default
+from xkcdkit.config import DEFAULT_TOML, CliSettings, config_path, dump, load_settings, write_default
 from xkcdkit.models import Comic
 from xkcdkit.render import can_draw, comic_image, comic_text, framed
 from xkcdkit.sources import fetch_image
@@ -88,14 +88,14 @@ class View:
     explain: bool = False
     scale: float = 1.0
     fit: bool = False
-    margin: int = 1
+    layout: CliSettings = field(default_factory=CliSettings)
 
 
 def view(json: bool, no_image: bool, explain: bool, scale: float | None, fit: bool) -> View:
     """Combine command flags with the settings file; flags win."""
     settings = load_settings()
     image = settings.image
-    return View(json, not no_image, explain, scale or image.scale, fit or image.fit, settings.cli.margin)
+    return View(json, not no_image, explain, scale or image.scale, fit or image.fit, settings.cli)
 
 
 async def present(xk: AsyncXKCD, pending: Awaitable[Comic], view: View) -> None:
@@ -108,7 +108,7 @@ async def present(xk: AsyncXKCD, pending: Awaitable[Comic], view: View) -> None:
     if view.image and can_draw():
         parts.append(comic_image(await fetch_image(xk.http, comic), view.scale, view.fit))
     parts.append(comic_text(comic, explain=view.explain))
-    console.print(framed(parts, view.margin))
+    console.print(framed(parts, view.layout.padding, view.layout.gap_lines))
 
 
 @app.command()

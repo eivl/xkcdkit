@@ -4,6 +4,7 @@ import json
 import os
 import tomllib
 from pathlib import Path
+from typing import Annotated
 
 from platformdirs import user_config_path
 from pydantic import BaseModel, Field, ValidationError
@@ -24,8 +25,15 @@ image_pane = 2
 
 [cli]
 # Blank space around a printed comic: lines above and below, twice as many columns
-# left and right. 0 gives a tight layout.
+# left and right, and the same number of lines between the image and the text card.
+# 0 gives a tight layout.
 margin = 1
+# Override single sides if you like; anything left unset follows margin.
+# top = 1
+# bottom = 1
+# left = 2
+# right = 2
+# gap = 1
 """
 
 
@@ -42,10 +50,32 @@ class TuiSettings(BaseModel):
     image_pane: int = Field(default=2, ge=1, le=8)
 
 
+Side = Annotated[int | None, Field(default=None, ge=0, le=16)]
+
+
 class CliSettings(BaseModel):
     """How the command line lays out its output."""
 
     margin: int = Field(default=1, ge=0, le=8)
+    top: Side = None
+    bottom: Side = None
+    left: Side = None
+    right: Side = None
+    gap: Side = None
+
+    @property
+    def padding(self) -> tuple[int, int, int, int]:
+        """Blank space as (top, right, bottom, left); unset sides follow ``margin``."""
+        top = self.margin if self.top is None else self.top
+        bottom = self.margin if self.bottom is None else self.bottom
+        left = self.margin * 2 if self.left is None else self.left
+        right = self.margin * 2 if self.right is None else self.right
+        return top, right, bottom, left
+
+    @property
+    def gap_lines(self) -> int:
+        """Blank lines between the image and the text card; follows ``margin`` when unset."""
+        return self.margin if self.gap is None else self.gap
 
 
 class Settings(BaseModel):
@@ -61,7 +91,7 @@ def dump(settings: Settings) -> str:
     lines: list[str] = []
     for section, values in settings.model_dump().items():
         lines.append(f"[{section}]")
-        lines.extend(f"{key} = {json.dumps(value)}" for key, value in values.items())
+        lines.extend(f"{key} = {json.dumps(value)}" for key, value in values.items() if value is not None)
         lines.append("")
     return "\n".join(lines)
 

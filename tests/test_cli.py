@@ -225,6 +225,21 @@ def test_margin_frames_the_card(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert "#614" in tight
 
 
+def test_per_side_margins_and_gap_under_the_image(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Single sides can be overridden, and gap sets the blank lines between image and card."""
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
+    path.write_text("[cli]\nmargin = 0\ntop = 1\nleft = 4\ngap = 2\n", encoding="utf-8")
+    monkeypatch.setattr("xkcdkit.cli.can_draw", lambda: True)
+    monkeypatch.setattr("xkcdkit.cli.comic_image", lambda data, scale, fit: "IMG")
+    lines = [line.rstrip() for line in runner.invoke(app, ["show", "614"]).stdout.split("\n")]
+    assert lines[0] == ""
+    assert lines[1] == "    IMG"
+    assert lines[2:4] == ["", ""]
+    assert lines[4].startswith("    ")
+    assert "#614" in lines[4]
+
+
 def test_shell_completion_is_offered() -> None:
     """Typer's completion installer is enabled for bash, zsh, fish and PowerShell."""
     assert "--install-completion" in runner.invoke(app, ["--help"]).output
