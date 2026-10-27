@@ -16,10 +16,12 @@ from textual_image.widget import Image
 
 from xkcdkit import XKCDError
 from xkcdkit.client import AsyncXKCD
+from xkcdkit.config import Settings
 from xkcdkit.models import ArchiveEntry, Comic
 from xkcdkit.sources import fetch_image
 
-HELP = "j/k move  / filter  enter open  r random  l latest  i image  s sync  q quit"
+HELP = "j/k move  / filter  enter open  r random  l latest  i image  +/- zoom  s sync  q quit"
+MAX_PANE = 8
 
 
 def option(entry: ArchiveEntry) -> Option:
@@ -35,6 +37,7 @@ class XKCDApp(App[None]):
     #archive-pane { width: 40; border: round $primary; }
     #archive { height: 1fr; }
     #image-pane { height: 2fr; border: round $secondary; align: center middle; }
+    #image { width: auto; height: auto; }
     TabbedContent { height: 1fr; }
     .text { padding: 0 1; }
     """
@@ -45,15 +48,21 @@ class XKCDApp(App[None]):
         Binding("r", "random", "Random"),
         Binding("l", "latest", "Latest"),
         Binding("i", "toggle_image", "Image"),
+        Binding("plus,equals_sign", "zoom(1)", "Zoom", key_display="+/-"),
+        Binding("minus", "zoom(-1)", "Zoom out", show=False),
         Binding("s", "sync", "Sync"),
+        Binding("down", "cursor('down')", "Down", show=False),
+        Binding("up", "cursor('up')", "Up", show=False),
+        Binding("escape", "focus_list", "List", show=False),
         Binding("question_mark", "help", "Help", key_display="?"),
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, client: AsyncXKCD) -> None:
-        """Keep the client; the store it holds feeds the archive list."""
+    def __init__(self, client: AsyncXKCD, settings: Settings | None = None) -> None:
+        """Keep the client (its store feeds the archive list) and the user's settings."""
         super().__init__()
         self.client = client
+        self.settings = settings or Settings()
         self.entries: list[ArchiveEntry] = []
 
     def compose(self) -> ComposeResult:
@@ -77,6 +86,7 @@ class XKCDApp(App[None]):
     def on_mount(self) -> None:
         """Show the cached archive (syncing it on first run) and open the latest comic."""
         self.query_one(OptionList).focus()
+        self.query_one("#image-pane").styles.height = f"{self.settings.tui.image_pane}fr"
         self.entries = self.client.store.archive()
         self.show_entries(self.entries)
         if not self.entries:
@@ -100,10 +110,10 @@ class XKCDApp(App[None]):
         self.show_entries([e for score, e in scored if score >= 70])
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Enter in the filter opens the first match."""
+        """Enter in the filter opens the highlighted match (the first unless moved)."""
         archive = self.query_one(OptionList)
         if archive.option_count:
-            self.open(int(str(archive.get_option_at_index(0).id)))
+            self.open(int(str(archive.get_option_at_index(archive.highlighted or 0).id)))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Enter on a row opens that comic."""
@@ -150,6 +160,16 @@ class XKCDApp(App[None]):
         """Jump to the filter box."""
         self.query_one("#filter", Input).focus()
 
+    def action_focus_list(self) -> None:
+        """Return to the archive list."""
+        self.query_one(OptionList).focus()
+
+    def action_zoom(self, step: int) -> None:
+        """Grow or shrink the image pane relative to the text pane."""
+        pane = self.query_one("#image-pane")
+        self.settings.tui.image_pane = min(MAX_PANE, max(1, self.settings.tui.image_pane + step))
+        pane.styles.height = f"{self.settings.tui.image_pane}fr"
+
     def action_random(self) -> None:
         """Open a random comic."""
         self.open(-1)
@@ -180,9 +200,9 @@ class XKCDApp(App[None]):
         self.notify(HELP, title="Keys", timeout=8)
 
 
-def run_tui(client: AsyncXKCD) -> None:
+def run_tui(client: AsyncXKCD, settings: Settings | None = None) -> None:
     """Start the browser and close the client when it exits."""
     try:
-        XKCDApp(client).run()
+        XKCDApp(client, settings).run()
     finally:
         client.store.close()

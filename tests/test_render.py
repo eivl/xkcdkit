@@ -3,9 +3,11 @@
 import io
 from typing import Any
 
+import pytest
 from PIL import Image as PILImage
 from rich.console import Console
 
+from xkcdkit import XKCDError
 from xkcdkit.models import Comic
 from xkcdkit.render import can_draw, comic_image, comic_text
 
@@ -41,12 +43,42 @@ def test_comic_text_marks_missing_explanation(comic_json: dict[str, Any]) -> Non
     assert "No explanation" in render(comic_text(comic, explain=True))
 
 
+def png(width: int, height: int) -> bytes:
+    """A blank PNG of the given pixel size."""
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def width_of(renderable: Any, console_width: int = 100) -> int:
+    """Widest rendered line, in cells."""
+    console = Console(
+        width=console_width, height=60, file=io.StringIO(), force_terminal=False, color_system=None
+    )
+    console.print(renderable)
+    return max(len(line) for line in console.file.getvalue().splitlines())  # type: ignore[attr-defined]
+
+
 def test_comic_image_renders_png_bytes() -> None:
     """Image bytes become a renderable that produces output without a TTY."""
-    buffer = io.BytesIO()
-    PILImage.new("RGB", (8, 4), "white").save(buffer, format="PNG")
-    out = render(comic_image(buffer.getvalue()))
-    assert out.strip() != ""
+    assert render(comic_image(png(8, 4))).strip() != ""
+
+
+def test_comic_image_scale_multiplies_natural_size() -> None:
+    """scale=2 draws the image twice as wide as scale=1."""
+    natural = width_of(comic_image(png(200, 100)))
+    assert width_of(comic_image(png(200, 100), scale=2)) == natural * 2
+
+
+def test_comic_image_fit_fills_the_terminal_width() -> None:
+    """fit=True uses the whole console width whatever the source size."""
+    assert width_of(comic_image(png(200, 100), fit=True), console_width=90) == 90
+
+
+def test_comic_image_rejects_bad_bytes() -> None:
+    """Corrupt data is an XKCDError, not a PIL traceback."""
+    with pytest.raises(XKCDError, match="image"):
+        comic_image(b"not a png")
 
 
 def test_can_draw_is_false_without_a_tty() -> None:

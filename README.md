@@ -98,6 +98,40 @@ xkcd search "sandwich" --json | jq '.[].num'
 `--no-image` skips the picture. Images are also skipped automatically when
 stdout is not a terminal, so pipes always get clean text.
 
+Images are drawn at the size the terminal reports for them, which can be
+small on a high-resolution screen. `--scale 2` (or `-s 3`, any factor) makes
+them bigger, and `--fit` fills the terminal while keeping the aspect ratio:
+
+```sh
+xkcd show 614 --scale 2
+xkcd latest --fit
+```
+
+### Settings file
+
+Defaults for these live in a small TOML file. `xkcd config` prints its
+location and the current values; `xkcd config --init` writes a commented
+file with every key:
+
+| Platform | Location |
+| -------- | -------- |
+| Linux    | `~/.config/xkcdkit/config.toml` |
+| macOS    | `~/Library/Application Support/xkcdkit/config.toml` |
+| Windows  | `%APPDATA%\xkcdkit\config.toml` |
+
+Set `XKCDKIT_CONFIG` to use another path.
+
+```toml
+[image]
+scale = 2.0      # CLI image size multiplier
+fit = false      # CLI: fill the terminal instead
+
+[tui]
+image_pane = 3   # browser: image pane height relative to the text pane (1 to 8)
+```
+
+Command line flags always win over the file.
+
 ### The browser
 
 `xkcd tui` opens a two-pane browser in the spirit of lazygit: the archive on
@@ -107,14 +141,19 @@ explanation.
 | Key     | Action                           |
 | ------- | -------------------------------- |
 | `j`/`k` | move through the archive         |
-| `/`     | filter the archive by title      |
+| `/`     | filter the archive by title; up/down still move the list, Esc returns to it |
 | `Enter` | open the selected comic          |
 | `r`     | random comic                     |
 | `l`     | latest comic                     |
 | `i`     | show or hide the image pane      |
+| `+`/`-` | grow or shrink the image pane    |
 | `s`     | sync the archive index           |
 | `?`     | key help                         |
 | `q`     | quit                             |
+
+The image always fills its pane while keeping its aspect ratio, so the pane
+height is the zoom. The starting height comes from `image_pane` in the
+settings file.
 
 ## Library
 

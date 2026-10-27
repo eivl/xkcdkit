@@ -133,7 +133,7 @@ def test_image_is_drawn_on_a_terminal(monkeypatch: pytest.MonkeyPatch, fake_clie
 def test_tui_command_starts_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     """The tui command hands a client to run_tui."""
     started: list[AsyncXKCD] = []
-    monkeypatch.setattr("xkcdkit.tui.run_tui", started.append)
+    monkeypatch.setattr("xkcdkit.tui.run_tui", lambda client, settings: started.append(client))
     assert runner.invoke(app, ["tui"]).exit_code == 0
     assert len(started) == 1
 
@@ -163,3 +163,32 @@ def test_titles_with_brackets_are_printed_literally() -> None:
     shown = runner.invoke(app, ["show", "403"])
     assert shown.exit_code == 0
     assert "see [sic] and [/b] end" in shown.output
+
+
+def test_scale_and_fit_reach_the_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """--scale and --fit are passed to comic_image; config supplies the defaults."""
+    seen: list[tuple[float, bool]] = []
+
+    def fake_image(data: bytes, scale: float, fit: bool) -> str:
+        seen.append((scale, fit))
+        return "img"
+
+    monkeypatch.setattr("xkcdkit.cli.can_draw", lambda: True)
+    monkeypatch.setattr("xkcdkit.cli.comic_image", fake_image)
+    assert runner.invoke(app, ["show", "614", "--scale", "3", "--fit"]).exit_code == 0
+    assert runner.invoke(app, ["show", "614"]).exit_code == 0
+    assert seen == [(3.0, True), (1.0, False)]
+
+
+def test_config_command_prints_path_and_creates_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Xkcd config shows where settings live; --init writes the defaults once."""
+    path = tmp_path / "cfg" / "config.toml"
+    monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
+    result = runner.invoke(app, ["config"])
+    assert result.exit_code == 0
+    assert str(path) in result.output
+    assert "scale" in result.output
+    assert not path.exists()
+    assert "created" in runner.invoke(app, ["config", "--init"]).output
+    assert path.exists()
+    assert "exists" in runner.invoke(app, ["config", "--init"]).output

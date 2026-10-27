@@ -7,6 +7,7 @@ import pytest
 from textual.widgets import Input, OptionList, Static
 
 from xkcdkit import AsyncXKCD
+from xkcdkit.config import Settings
 from xkcdkit.tui import XKCDApp
 
 from .test_sources import BrokenSites, FakeSites
@@ -159,4 +160,37 @@ async def test_offline_start_and_sync_keep_the_app_alive(tmp_path: Path) -> None
         await settled(app, pilot)
         assert app.is_running
         assert len([n for n in app._notifications if "503" in str(n.message)]) >= 3
+    await client.close()
+
+
+async def test_arrow_keys_navigate_the_list_from_the_filter(app: XKCDApp) -> None:
+    """Up/down move the highlight while typing, enter opens the highlighted row, escape leaves."""
+    async with app.run_test() as pilot:
+        await settled(app, pilot)
+        await pilot.press("slash", "down", "down", "up")
+        assert app.query_one(OptionList).highlighted == 1
+        await pilot.press("enter")
+        await settled(app, pilot)
+        assert "Forms of Water" in app.sub_title
+        await pilot.press("slash", "escape")
+        assert app.focused is app.query_one(OptionList)
+
+
+async def test_image_pane_zoom_keys_and_setting(tmp_path: Path) -> None:
+    """The image pane starts at the configured height and +/- change it within limits."""
+    settings = Settings.model_validate({"tui": {"image_pane": 3}})
+    client = AsyncXKCD(db=tmp_path / "z.sqlite3", client=FakeSites().client(), explain_delay=0)
+    app = XKCDApp(client, settings)
+    async with app.run_test() as pilot:
+        await settled(app, pilot)
+        pane = app.query_one("#image-pane")
+        assert str(pane.styles.height) == "3fr"
+        await pilot.press("plus")
+        assert str(pane.styles.height) == "4fr"
+        for _ in range(10):
+            await pilot.press("minus")
+        assert str(pane.styles.height) == "1fr"
+        for _ in range(12):
+            await pilot.press("plus")
+        assert str(pane.styles.height) == "8fr"
     await client.close()

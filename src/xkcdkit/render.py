@@ -3,10 +3,12 @@
 import io
 import sys
 
+from PIL import Image as PILImage
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
+from xkcdkit import XKCDError
 from xkcdkit.models import Comic
 
 
@@ -26,15 +28,29 @@ def explanation_text(comic: Comic) -> Text:
     return Text(comic.explanation_text)
 
 
-def comic_image(data: bytes) -> RenderableType:
+def comic_image(data: bytes, scale: float = 1.0, fit: bool = False) -> RenderableType:
     """A Rich renderable for the image bytes using the best protocol the terminal supports.
 
-    textual-image probes the terminal on import, so it is imported here rather than
-    at module load.
+    ``scale`` multiplies the image's natural terminal size; ``fit`` instead fills the
+    terminal while keeping the aspect ratio. textual-image probes the terminal on
+    import, so it is imported here rather than at module load.
+
+    Raises:
+        XKCDError: when the bytes are not an image.
     """
     from textual_image.renderable import Image
 
-    renderable: RenderableType = Image(io.BytesIO(data))
+    try:
+        picture: PILImage.Image = PILImage.open(io.BytesIO(data))
+        picture.load()
+    except OSError as exc:
+        raise XKCDError(f"not an image: {exc}") from exc
+    if fit:
+        renderable: RenderableType = Image(picture, width="auto", height="auto")
+        return renderable
+    if scale != 1:
+        picture = picture.resize((round(picture.width * scale), round(picture.height * scale)))
+    renderable = Image(picture)
     return renderable
 
 

@@ -12,6 +12,7 @@ from rich.text import Text
 
 from xkcdkit import XKCDError, __version__
 from xkcdkit.client import AsyncXKCD
+from xkcdkit.config import config_path, load_settings, write_default
 from xkcdkit.models import Comic
 from xkcdkit.render import can_draw, comic_image, comic_text
 from xkcdkit.sources import fetch_image
@@ -21,6 +22,8 @@ console = Console()
 errors = Console(stderr=True)
 Num = Annotated[int, typer.Argument(help="Comic number.")]
 Json = Annotated[bool, typer.Option("--json", help="Print JSON for piping.")]
+Scale = Annotated[float | None, typer.Option("--scale", "-s", help="Image size multiplier.")]
+Fit = Annotated[bool, typer.Option("--fit", help="Fill the terminal with the image.")]
 NoImage = Annotated[bool, typer.Option("--no-image", help="Do not draw the image.")]
 Explain = Annotated[bool, typer.Option("--explain", "-e", help="Include the explanation.")]
 
@@ -75,6 +78,14 @@ class View:
     json: bool = False
     image: bool = True
     explain: bool = False
+    scale: float = 1.0
+    fit: bool = False
+
+
+def view(json: bool, no_image: bool, explain: bool, scale: float | None, fit: bool) -> View:
+    """Combine command flags with the settings file; flags win."""
+    image = load_settings().image
+    return View(json, not no_image, explain, scale or image.scale, fit or image.fit)
 
 
 async def present(xk: AsyncXKCD, pending: Awaitable[Comic], view: View) -> None:
@@ -84,32 +95,48 @@ async def present(xk: AsyncXKCD, pending: Awaitable[Comic], view: View) -> None:
         console.print_json(comic.model_dump_json())
         return
     if view.image and can_draw():
-        console.print(comic_image(await fetch_image(xk.http, comic)))
+        console.print(comic_image(await fetch_image(xk.http, comic), view.scale, view.fit))
     console.print(comic_text(comic, explain=view.explain))
 
 
 @app.command()
 def show(
-    ctx: typer.Context, num: Num, no_image: NoImage = False, explain: Explain = False, json: Json = False
+    ctx: typer.Context,
+    num: Num,
+    no_image: NoImage = False,
+    explain: Explain = False,
+    json: Json = False,
+    scale: Scale = None,
+    fit: Fit = False,
 ) -> None:
     """Show one comic by number."""
-    run(ctx, lambda xk: present(xk, xk.get(num), View(json, not no_image, explain)))
+    run(ctx, lambda xk: present(xk, xk.get(num), view(json, no_image, explain, scale, fit)))
 
 
 @app.command()
 def latest(
-    ctx: typer.Context, no_image: NoImage = False, explain: Explain = False, json: Json = False
+    ctx: typer.Context,
+    no_image: NoImage = False,
+    explain: Explain = False,
+    json: Json = False,
+    scale: Scale = None,
+    fit: Fit = False,
 ) -> None:
     """Show the newest comic."""
-    run(ctx, lambda xk: present(xk, xk.latest(), View(json, not no_image, explain)))
+    run(ctx, lambda xk: present(xk, xk.latest(), view(json, no_image, explain, scale, fit)))
 
 
 @app.command()
 def random(
-    ctx: typer.Context, no_image: NoImage = False, explain: Explain = False, json: Json = False
+    ctx: typer.Context,
+    no_image: NoImage = False,
+    explain: Explain = False,
+    json: Json = False,
+    scale: Scale = None,
+    fit: Fit = False,
 ) -> None:
     """Show a random comic."""
-    run(ctx, lambda xk: present(xk, xk.random(), View(json, not no_image, explain)))
+    run(ctx, lambda xk: present(xk, xk.random(), view(json, no_image, explain, scale, fit)))
 
 
 @app.command()
@@ -176,4 +203,19 @@ def tui(ctx: typer.Context) -> None:
     """Open the interactive browser."""
     from xkcdkit.tui import run_tui
 
-    run_tui(open_client(ctx.obj.db))
+    run_tui(open_client(ctx.obj.db), load_settings())
+
+
+@app.command()
+def config(
+    init: Annotated[bool, typer.Option("--init", help="Create the file with defaults.")] = False,
+) -> None:
+    """Show where settings live and what they are; --init writes a commented default file."""
+    path = config_path()
+    if init:
+        console.print(
+            f"{'created' if write_default(path) else 'exists'}: {path}", markup=False, soft_wrap=True
+        )
+        return
+    console.print(f"settings file: {path}", markup=False, soft_wrap=True)
+    console.print_json(load_settings(path).model_dump_json())
