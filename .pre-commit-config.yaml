@@ -31,7 +31,7 @@ repos:
           - platformdirs>=4.3
           - pillow>=11
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.4
+    rev: 0.13.6
     hooks:
       - id: uv-lock
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
@@ -39,6 +39,6 @@ repos:
     hooks:
       - id: zizmor
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.10
+    rev: v1.7.12
     hooks:
       - id: actionlint

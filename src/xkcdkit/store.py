@@ -150,7 +150,7 @@ class Store:
 
 def score_comic(comic: Comic, query: str) -> float:
     """Score a comic against a query: exact-ish titles win, long text counts a bit less."""
-    title = fuzz.WRatio(query, comic.title, processor=str.lower)
+    title = float(fuzz.WRatio(query, comic.title, processor=str.lower))
     body = " ".join([comic.alt, comic.transcript, comic.explanation_text])
-    text = fuzz.token_set_ratio(query, body, processor=str.lower)
+    text = float(fuzz.token_set_ratio(query, body, processor=str.lower))
     return max(title, 0.9 * text)

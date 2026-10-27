@@ -34,7 +34,8 @@ def comic_image(data: bytes) -> RenderableType:
     """
     from textual_image.renderable import Image
 
-    return Image(io.BytesIO(data))
+    renderable: RenderableType = Image(io.BytesIO(data))
+    return renderable
 
 
 def can_draw() -> bool:

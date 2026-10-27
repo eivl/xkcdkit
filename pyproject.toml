@@ -94,3 +94,19 @@ branch = true
 fail_under = 95
 show_missing = true
 exclude_also = ["if TYPE_CHECKING:", "pragma: no cover"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+commit_parser = "conventional"
+tag_format = "v{version}"
+allow_zero_version = true
+major_on_zero = false
+build_command = ""
+commit_message = "chore(release): {version} [skip ci]"
+
+[tool.semantic_release.changelog]
+mode = "update"
+default_templates = { changelog_file = "CHANGELOG.md" }
+
+[tool.semantic_release.branches.main]
+match = "main"
