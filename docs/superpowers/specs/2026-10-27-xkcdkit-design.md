@@ -96,11 +96,11 @@ async with AsyncXKCD() as xk:
     latest = await xk.latest()
     rnd = await xk.random()
     hits = await xk.search("woodpecker", limit=5)
-    await xk.sync()             # archive + latest, fill gaps lazily
-    await xk.sync(full=True)    # every comic and explanation
+    await xk.sync()  # archive + latest, fill gaps lazily
+    await xk.sync(full=True)  # every comic and explanation
     await xk.resync(max_age=timedelta(days=7))
 
-with XKCD() as xk:              # same methods, blocking
+with XKCD() as xk:  # same methods, blocking
     comic = xk.get(614)
 ```
 

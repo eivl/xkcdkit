@@ -10,7 +10,7 @@ from typing import Any, Self
 
 import httpx2
 
-from xkcdkit import XKCDError, ComicNotFound
+from xkcdkit import ComicNotFound, XKCDError
 from xkcdkit.models import ArchiveEntry, Comic
 from xkcdkit.sources import fetch_archive, fetch_comic, fetch_explanation, user_agent
 from xkcdkit.store import Store, utc_now
@@ -108,7 +108,7 @@ class AsyncXKCD:
     async def random(self) -> Comic:
         """Return a random comic, using the archive index for the number range."""
         entries = self.store.archive() or await self.refresh_archive()
-        return await self.get(random.choice([entry.num for entry in entries]))  # noqa: S311
+        return await self.get(random.choice([entry.num for entry in entries]))
 
     async def search(self, query: str, limit: int = 10) -> list[Comic]:
         """Fuzzy-search cached comics by title, alt text, transcript and explanation."""
@@ -138,9 +138,7 @@ class AsyncXKCD:
         self.store.set_meta("last_sync_at", utc_now().isoformat())
         return self.store.count() - before
 
-    async def resync(
-        self, max_age: timedelta = timedelta(days=30), progress: Progress | None = None
-    ) -> int:
+    async def resync(self, max_age: timedelta = timedelta(days=30), progress: Progress | None = None) -> int:
         """Re-fetch comics older than ``max_age`` or missing an explanation. Returns the count."""
         return await self.fetch_many(self.store.stale(max_age), progress)
 

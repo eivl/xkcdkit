@@ -1,12 +1,13 @@
 """A lazygit-style browser: archive on the left, image and text panes on the right."""
 
 import io
+from typing import ClassVar
 
 from PIL import Image as PILImage
 from rapidfuzz import fuzz
 from textual import work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header, Input, ListItem, ListView, Static, TabbedContent, TabPane
 from textual_image.widget import Image
@@ -40,7 +41,7 @@ class XKCDApp(App[None]):
     TabbedContent { height: 1fr; }
     .text { padding: 0 1; }
     """
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("j", "cursor('down')", "Down"),
         Binding("k", "cursor('up')", "Up"),
         Binding("slash", "focus_filter", "Filter", key_display="/"),

@@ -7,6 +7,7 @@ import httpx2
 import pytest
 
 from xkcdkit import ComicNotFound, XKCDError
+from xkcdkit.models import Comic
 from xkcdkit.sources import (
     fetch_archive,
     fetch_comic,
@@ -79,7 +80,8 @@ async def test_fetch_comic_by_number(sites: FakeSites) -> None:
     """A numbered comic comes from /N/info.0.json."""
     async with sites.client() as client:
         comic = await fetch_comic(client, 614)
-    assert comic.num == 614 and comic.title == "Woodpecker"
+    assert comic.num == 614
+    assert comic.title == "Woodpecker"
     assert sites.requests == ["https://xkcd.com/614/info.0.json"]
 
 
@@ -119,7 +121,8 @@ async def test_fetch_network_error_raises_xkcd_error() -> None:
 def test_parse_archive(archive_html: str) -> None:
     """Each anchor becomes an entry, newest first, with the unpadded date parsed."""
     entries = parse_archive(archive_html)
-    assert entries[0].num == 3316 and entries[0].title == "Siege Engine"
+    assert entries[0].num == 3316
+    assert entries[0].title == "Siege Engine"
     assert entries[0].date.isoformat() == "2026-10-26"
     assert any(entry.num == 614 and entry.title == "Woodpecker" for entry in entries)
     assert all(entry.num > 0 for entry in entries)
@@ -138,7 +141,8 @@ async def test_fetch_explanation(sites: FakeSites) -> None:
         result = await fetch_explanation(client, 614)
     assert result is not None
     wikitext, revid = result
-    assert "==Explanation==" in wikitext and revid == 216714
+    assert "==Explanation==" in wikitext
+    assert revid == 216714
 
 
 async def test_fetch_explanation_missing(sites: FakeSites) -> None:
@@ -152,3 +156,28 @@ async def test_fetch_image(sites: FakeSites) -> None:
     async with sites.client() as client:
         comic = await fetch_comic(client, 614)
         assert await fetch_image(client, comic) == PNG
+
+
+class BrokenSites(FakeSites):
+    """A fake where every endpoint answers HTTP 503."""
+
+    def handle(self, request: httpx2.Request) -> httpx2.Response:
+        """Fail everything."""
+        if request.url.host == "www.explainxkcd.com" and request.url.params["page"] == "7":
+            return httpx2.Response(200, json={"error": {"code": "ratelimited", "info": "slow down"}})
+        return httpx2.Response(503, text="down")
+
+
+async def test_server_errors_are_wrapped_everywhere() -> None:
+    """Archive, explanation and image fetches all raise XKCDError on bad status."""
+    sites = BrokenSites()
+    comic = Comic.model_validate(json.loads((FIXTURES / "614.json").read_text()))
+    async with sites.client() as client:
+        with pytest.raises(XKCDError, match="503"):
+            await fetch_archive(client)
+        with pytest.raises(XKCDError, match="503"):
+            await fetch_explanation(client, 614)
+        with pytest.raises(XKCDError, match="slow down"):
+            await fetch_explanation(client, 7)
+        with pytest.raises(XKCDError, match="503"):
+            await fetch_image(client, comic)

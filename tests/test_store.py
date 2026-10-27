@@ -1,5 +1,6 @@
 """Tests for the SQLite store."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -26,10 +27,10 @@ def make_comic(num: int = 614, **extra: Any) -> Comic:
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Store:
+def store(tmp_path: Path) -> Iterator[Store]:
     """A store in a temporary directory."""
     with Store(tmp_path / "xkcd.sqlite3") as store:
-        yield store  # type: ignore[misc]
+        yield store
 
 
 def test_creates_missing_parent_directories(tmp_path: Path) -> None:
@@ -72,7 +73,8 @@ def test_put_stamps_synced_at_when_missing(store: Store) -> None:
     before = datetime.now(UTC)
     store.put(make_comic())
     fetched = store.get(614)
-    assert fetched is not None and fetched.synced_at is not None
+    assert fetched is not None
+    assert fetched.synced_at is not None
     assert fetched.synced_at >= before
 
 
@@ -81,7 +83,8 @@ def test_put_is_insert_only(store: Store) -> None:
     store.put(make_comic(title="first"))
     store.put(make_comic(title="second"))
     fetched = store.get(614)
-    assert fetched is not None and fetched.title == "first"
+    assert fetched is not None
+    assert fetched.title == "first"
 
 
 def test_replace_overwrites(store: Store) -> None:
@@ -89,7 +92,8 @@ def test_replace_overwrites(store: Store) -> None:
     store.put(make_comic(title="first"))
     store.replace(make_comic(title="second"))
     fetched = store.get(614)
-    assert fetched is not None and fetched.title == "second"
+    assert fetched is not None
+    assert fetched.title == "second"
 
 
 def test_nums_and_count(store: Store) -> None:

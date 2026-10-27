@@ -20,7 +20,9 @@ def render(renderable: Any) -> str:
 def test_comic_text_has_title_number_date_and_alt(comic_json: dict[str, Any]) -> None:
     """The text view shows the essentials on top and the alt text below."""
     out = render(comic_text(Comic.model_validate(comic_json)))
-    assert "#614" in out and "Woodpecker" in out and "2009-07-24" in out
+    assert "#614" in out
+    assert "Woodpecker" in out
+    assert "2009-07-24" in out
     assert "If you don't have an extension cord" in out
     assert "https://xkcd.com/614/" in out
     assert "Explanation" not in out

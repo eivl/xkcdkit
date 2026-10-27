@@ -34,7 +34,8 @@ async def xk(sites: FakeSites, db: Path) -> AsyncIterator[AsyncXKCD]:
 async def test_get_fetches_and_caches(xk: AsyncXKCD, sites: FakeSites) -> None:
     """The first get hits both sites; the second is served from the cache."""
     first = await xk.get(614)
-    assert first.title == "Woodpecker" and first.explanation_revid == 216714
+    assert first.title == "Woodpecker"
+    assert first.explanation_revid == 216714
     assert len(sites.requests) == 2
     second = await xk.get(614)
     assert second == first
@@ -44,7 +45,8 @@ async def test_get_fetches_and_caches(xk: AsyncXKCD, sites: FakeSites) -> None:
 async def test_get_without_explanation(xk: AsyncXKCD, sites: FakeSites) -> None:
     """explain=False skips explainxkcd and stores the comic flagged missing-explanation."""
     comic = await xk.get(614, explain=False)
-    assert comic.explanation is None and comic.explanation_missing is True
+    assert comic.explanation is None
+    assert comic.explanation_missing is True
     assert len(sites.requests) == 1
 
 
@@ -57,12 +59,11 @@ async def test_get_missing_comic(xk: AsyncXKCD) -> None:
 async def test_get_flags_missing_explanation(xk: AsyncXKCD) -> None:
     """When explainxkcd has no page the comic is stored with the flag set."""
     comic = await xk.get(1)
-    assert comic.explanation_missing is True and comic.explanation is None
+    assert comic.explanation_missing is True
+    assert comic.explanation is None
 
 
-async def test_missing_explanation_is_retried_after_a_day(
-    xk: AsyncXKCD, sites: FakeSites, db: Path
-) -> None:
+async def test_missing_explanation_is_retried_after_a_day(xk: AsyncXKCD, sites: FakeSites, db: Path) -> None:
     """A stale missing-explanation row is re-fetched on access; a fresh one is not."""
     await xk.get(1)
     assert len(sites.requests) == 2
@@ -124,7 +125,9 @@ async def test_sync_full_fetches_everything_and_skips_gaps(xk: AsyncXKCD) -> Non
     seen: list[tuple[int, int]] = []
     fetched = await xk.sync(full=True, progress=lambda done, total: seen.append((done, total)))
     assert fetched >= 5
-    assert xk.store.has(1) and xk.store.has(614) and xk.store.has(3316)
+    assert xk.store.has(1)
+    assert xk.store.has(614)
+    assert xk.store.has(3316)
     assert not xk.store.has(405)
     assert seen[-1][0] == seen[-1][1]
     assert xk.store.get_meta("last_full_sync_at") is not None
@@ -149,7 +152,10 @@ async def test_resync_refetches_stale(xk: AsyncXKCD, sites: FakeSites) -> None:
     assert await xk.resync(max_age=timedelta(days=30)) == 2
     assert len(sites.requests) == before + 4
     refreshed = xk.store.get(614)
-    assert refreshed is not None and refreshed.synced_at > old.synced_at
+    assert refreshed is not None
+    assert refreshed.synced_at is not None
+    assert old.synced_at is not None
+    assert refreshed.synced_at > old.synced_at
 
 
 def test_sync_wrapper(sites: FakeSites, db: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,6 +9,7 @@ Quick start::
 """
 
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING
 
 try:
     __version__ = version("xkcdkit")
@@ -20,9 +21,13 @@ class XKCDError(Exception):
     """Base class for every error raised by xkcdkit."""
 
 
-class ComicNotFound(XKCDError):
+class ComicNotFound(XKCDError):  # noqa: N818 - the name reads better at call sites
     """Raised when xkcd has no comic with the requested number."""
 
+
+if TYPE_CHECKING:
+    from xkcdkit.client import XKCD, AsyncXKCD
+    from xkcdkit.models import ArchiveEntry, Comic
 
 LAZY = {
     "AsyncXKCD": "xkcdkit.client",
@@ -38,6 +43,7 @@ def __getattr__(name: str) -> object:
         module = __import__(LAZY[name], fromlist=[name])
         return getattr(module, name)
     raise AttributeError(f"module 'xkcdkit' has no attribute {name!r}")
+
 
 __all__ = [
     "XKCD",

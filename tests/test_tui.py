@@ -59,7 +59,7 @@ async def test_enter_opens_selected_comic(app: XKCDApp) -> None:
 
 
 async def test_keys_random_image_toggle_and_navigation(app: XKCDApp) -> None:
-    """r loads a random comic, i hides the image pane, j/k move the list cursor."""
+    """R loads a random comic, i hides the image pane, j/k move the list cursor."""
     async with app.run_test() as pilot:
         await app.workers.wait_for_complete()
         await pilot.press("r")
@@ -92,9 +92,7 @@ async def test_help_and_sync(app: XKCDApp) -> None:
         assert any("Synced" in str(n.message) for n in app._notifications)
 
 
-async def test_bad_image_data_is_reported_not_fatal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_bad_image_data_is_reported_not_fatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Corrupt image bytes produce a warning notification and the text panes still fill."""
     monkeypatch.setattr("tests.test_sources.PNG", b"not a png")
     client = AsyncXKCD(db=tmp_path / "bad.sqlite3", client=FakeSites().client(), explain_delay=0)
@@ -104,4 +102,42 @@ async def test_bad_image_data_is_reported_not_fatal(
         await pilot.pause()
         assert "Siege Engine" in app.sub_title
         assert any("Image unavailable" in str(n.message) for n in app._notifications)
+    await client.close()
+
+
+async def test_filter_clear_and_submit_without_match(app: XKCDApp) -> None:
+    """Clearing the filter restores the list; enter on no match does nothing."""
+    async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.press("slash", *"zzzzzz")
+        await pilot.pause()
+        assert len(app.query(ArchiveItem)) == 0
+        await pilot.press("enter")
+        await pilot.pause()
+        for _ in range(6):
+            await pilot.press("backspace")
+        await pilot.pause()
+        assert len(app.query(ArchiveItem)) == 7
+
+
+async def test_list_enter_opens_comic(app: XKCDApp) -> None:
+    """Enter on a highlighted list row opens that comic."""
+    async with app.run_test() as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.press("j", "enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "Forms of Water" in app.sub_title or "Comic 3315" in app.sub_title
+
+
+async def test_open_failure_is_notified(tmp_path: Path) -> None:
+    """A comic that fails to load produces an error notification."""
+    client = AsyncXKCD(db=tmp_path / "x.sqlite3", client=FakeSites().client(), explain_delay=0)
+    app = XKCDApp(client)
+    async with app.run_test(notifications=True) as pilot:
+        await app.workers.wait_for_complete()
+        app.open(405)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert any("no comic 405" in str(n.message) for n in app._notifications)
     await client.close()

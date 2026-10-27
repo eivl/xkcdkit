@@ -83,7 +83,8 @@ def test_wikitext_handles_nested_templates() -> None:
     """Nested braces are removed completely, leaving no stray braces."""
     src = "==Explanation==\nA {{w|bird|{{nested}} thing}} sings."
     text = wikitext_to_text(src)
-    assert "{" not in text and "}" not in text
+    assert "{" not in text
+    assert "}" not in text
     assert text == "A thing sings." or text == "A bird sings."
 
 
@@ -96,3 +97,19 @@ def test_wikitext_empty() -> None:
     """Empty or None input gives an empty string."""
     assert wikitext_to_text("") == ""
     assert wikitext_to_text(None) == ""
+
+
+def test_wikitext_page_without_explanation_section() -> None:
+    """A sectioned page with no Explanation heading yields nothing."""
+    assert wikitext_to_text("==Transcript==\n:Some lines") == ""
+
+
+def test_wikitext_unknown_template_vanishes() -> None:
+    """Templates other than {{w|...}} are dropped entirely."""
+    assert wikitext_to_text("==Explanation==\nA {{citation needed}} claim.") == "A claim."
+
+
+def test_archive_entry_accepts_date_objects() -> None:
+    """The loose date validator passes real dates through."""
+    entry = ArchiveEntry(num=1, date=date(2006, 1, 1), title="Barrel - Part 1")
+    assert entry.date == date(2006, 1, 1)

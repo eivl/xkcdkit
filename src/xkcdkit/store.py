@@ -55,7 +55,9 @@ class Store:
         """Enter the context manager."""
         return self
 
-    def __exit__(self, *exc: tuple[type[BaseException] | None, BaseException | None, TracebackType | None]) -> None:
+    def __exit__(
+        self, *exc: tuple[type[BaseException] | None, BaseException | None, TracebackType | None]
+    ) -> None:
         """Close the connection on exit."""
         self.close()
 
@@ -67,12 +69,10 @@ class Store:
         """Insert a comic using ``verb`` (``OR IGNORE`` or ``OR REPLACE``)."""
         stamped = comic.model_copy(update={"synced_at": comic.synced_at or utc_now()})
         row = stamped.model_dump(mode="json")
-        placeholders = ", ".join("?" for _ in COLUMNS)
+        columns, marks = ", ".join(COLUMNS), ", ".join("?" for _ in COLUMNS)
+        sql = f"INSERT {verb} INTO comics ({columns}) VALUES ({marks})"  # noqa: S608 - all constants
         with self.db:
-            self.db.execute(
-                f"INSERT {verb} INTO comics ({', '.join(COLUMNS)}) VALUES ({placeholders})",
-                [row[column] for column in COLUMNS],
-            )
+            self.db.execute(sql, [row[column] for column in COLUMNS])
 
     def put(self, comic: Comic) -> None:
         """Store a comic unless one with the same number already exists."""
