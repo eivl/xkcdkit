@@ -42,14 +42,6 @@ async def test_get_fetches_and_caches(xk: AsyncXKCD, sites: FakeSites) -> None:
     assert len(sites.requests) == 2
 
 
-async def test_get_without_explanation(xk: AsyncXKCD, sites: FakeSites) -> None:
-    """explain=False skips explainxkcd and stores the comic flagged missing-explanation."""
-    comic = await xk.get(614, explain=False)
-    assert comic.explanation is None
-    assert comic.explanation_missing is True
-    assert len(sites.requests) == 1
-
-
 async def test_get_missing_comic(xk: AsyncXKCD) -> None:
     """A number xkcd never published raises ComicNotFound."""
     with pytest.raises(ComicNotFound):
@@ -88,7 +80,7 @@ async def test_random_uses_archive(xk: AsyncXKCD, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("random.choice", lambda nums: 614 if 614 in nums else nums[0])
     comic = await xk.random()
     assert comic.num == 614
-    assert len(xk.store.archive()) == 7
+    assert len(xk.store.archive()) == 9
 
 
 async def test_search_returns_comics(xk: AsyncXKCD) -> None:
@@ -120,25 +112,24 @@ async def test_sync_light(xk: AsyncXKCD, sites: FakeSites) -> None:
     assert xk.store.get_meta("last_full_sync_at") is None
 
 
-async def test_sync_full_fetches_everything_and_skips_gaps(xk: AsyncXKCD) -> None:
-    """A full sync fetches every archive entry, tolerates missing comics, reports progress."""
+async def test_sync_full_walks_every_number_up_to_latest(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """A full sync tries 1..latest, tolerates numbers xkcd lacks and reports progress."""
+    sites.latest["num"] = 4
     seen: list[tuple[int, int]] = []
     fetched = await xk.sync(full=True, progress=lambda done, total: seen.append((done, total)))
-    assert fetched >= 5
-    assert xk.store.has(1)
-    assert xk.store.has(614)
-    assert xk.store.has(3316)
-    assert not xk.store.has(405)
-    assert seen[-1][0] == seen[-1][1]
+    assert fetched == 3
+    assert xk.store.nums() == [1, 2, 4]
+    assert seen == [(1, 3), (2, 3), (3, 3)]
     assert xk.store.get_meta("last_full_sync_at") is not None
 
 
 async def test_sync_full_skips_already_cached(xk: AsyncXKCD, sites: FakeSites) -> None:
-    """Comics already in the cache are not fetched again."""
+    """Comics already in the cache are not fetched again; gaps are retried."""
+    sites.latest["num"] = 4
     await xk.sync(full=True)
     before = len(sites.requests)
     assert await xk.sync(full=True) == 0
-    # archive + latest, plus one retry of the archive entry xkcd answers 404 for
+    # archive + latest + one retry of number 3, which xkcd answers 404 for
     assert len(sites.requests) == before + 3
 
 
@@ -175,6 +166,15 @@ async def test_sync_wrapper_refuses_running_loop(sites: FakeSites, db: Path) -> 
     """Calling the sync wrapper inside an event loop gives a clear error."""
     with XKCD(db=db, client_factory=sites.client) as xk, pytest.raises(XKCDError, match="AsyncXKCD"):
         xk.get(614)
+
+
+async def test_get_completes_a_row_stored_without_explanation(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """A row that somehow has neither explanation nor the missing flag is completed on access."""
+    comic = (await xk.get(614)).model_copy(update={"explanation": None, "explanation_missing": False})
+    xk.store.replace(comic)
+    before = len(sites.requests)
+    assert (await xk.get(614)).explanation_revid == 216714
+    assert len(sites.requests) == before + 2
 
 
 async def test_default_client_and_db(monkeypatch: pytest.MonkeyPatch, db: Path) -> None:

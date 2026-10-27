@@ -113,3 +113,15 @@ def test_archive_entry_accepts_date_objects() -> None:
     """The loose date validator passes real dates through."""
     entry = ArchiveEntry(num=1, date=date(2006, 1, 1), title="Barrel - Part 1")
     assert entry.date == date(2006, 1, 1)
+
+
+def test_wikitext_keeps_text_after_subheadings() -> None:
+    """Level-3 headings inside Explanation become plain lines; only == headings end the section."""
+    src = "==Explanation==\nFirst para.\n===Title text===\nSecond para.\n==Transcript==\n:ignored"
+    assert wikitext_to_text(src) == "First para.\n\nTitle text\n\nSecond para."
+
+
+def test_wikitext_bare_external_links_vanish_cleanly() -> None:
+    """A bare [https://...] link disappears without eating the text after it."""
+    src = "==Explanation==\nSee [https://example.com] now, [sic] ok. Or [https://x.org the site]."
+    assert wikitext_to_text(src) == "See now, [sic] ok. Or the site."

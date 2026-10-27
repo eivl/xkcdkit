@@ -64,9 +64,9 @@ class AsyncXKCD:
         await self.http.aclose()
         self.store.close()
 
-    async def complete(self, comic: Comic, explain: bool = True) -> Comic:
-        """Attach the explainxkcd page (if wanted and present) and stamp the sync time."""
-        found = await fetch_explanation(self.http, comic.num) if explain else None
+    async def complete(self, comic: Comic) -> Comic:
+        """Attach the explainxkcd page when it exists and stamp the sync time."""
+        found = await fetch_explanation(self.http, comic.num)
         wikitext, revid = found if found else (None, None)
         return comic.model_copy(
             update={
@@ -78,12 +78,14 @@ class AsyncXKCD:
         )
 
     def fresh(self, comic: Comic) -> bool:
-        """A cached comic is fresh unless its explanation was missing more than a day ago."""
+        """A cached comic is fresh unless its explanation is absent and that is a day old."""
+        if comic.explanation is not None:
+            return True
         if not comic.explanation_missing or comic.synced_at is None:
-            return not comic.explanation_missing
+            return False
         return utc_now() - comic.synced_at < RETRY_MISSING_AFTER
 
-    async def get(self, num: int, explain: bool = True) -> Comic:
+    async def get(self, num: int) -> Comic:
         """Return comic ``num`` from the cache, fetching and caching it when needed.
 
         Raises:
@@ -91,9 +93,9 @@ class AsyncXKCD:
             XKCDError: on network or server failures.
         """
         cached = self.store.get(num)
-        if cached and (not explain or self.fresh(cached)):
+        if cached and self.fresh(cached):
             return cached
-        comic = await self.complete(await fetch_comic(self.http, num), explain)
+        comic = await self.complete(await fetch_comic(self.http, num))
         self.store.replace(comic)
         return comic
 
@@ -127,13 +129,15 @@ class AsyncXKCD:
     async def sync(self, full: bool = False, progress: Progress | None = None) -> int:
         """Refresh the archive index and the latest comic; with ``full`` fetch every comic.
 
-        Returns the number of comics newly added to the cache.
+        A full sync walks every number from 1 to the latest, so it does not depend
+        on the archive page. Returns the number of comics newly added to the cache.
         """
         before = self.store.count()
-        entries = await self.refresh_archive()
-        await self.latest()
+        await self.refresh_archive()
+        latest = await self.latest()
         if full:
-            await self.fetch_many([e.num for e in entries if not self.store.has(e.num)], progress)
+            cached = set(self.store.nums())
+            await self.fetch_many([n for n in range(1, latest.num + 1) if n not in cached], progress)
             self.store.set_meta("last_full_sync_at", utc_now().isoformat())
         self.store.set_meta("last_sync_at", utc_now().isoformat())
         return self.store.count() - before
@@ -200,9 +204,9 @@ class XKCD:
             return asyncio.run(call())
         raise XKCDError("XKCD cannot run inside an event loop; use AsyncXKCD")
 
-    def get(self, num: int, explain: bool = True) -> Comic:
+    def get(self, num: int) -> Comic:
         """See ``AsyncXKCD.get``."""
-        return self.run("get", num, explain=explain)  # type: ignore[no-any-return]
+        return self.run("get", num)  # type: ignore[no-any-return]
 
     def latest(self) -> Comic:
         """See ``AsyncXKCD.latest``."""

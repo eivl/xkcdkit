@@ -46,7 +46,7 @@ def test_show_prints_text(fake_client: FakeSites) -> None:
 
 def test_show_json_is_pipeable() -> None:
     """--json prints only a JSON document."""
-    result = runner.invoke(app, ["--json", "show", "614"])
+    result = runner.invoke(app, ["show", "614", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["num"] == 614
@@ -81,7 +81,7 @@ def test_search_lists_matches() -> None:
     assert result.exit_code == 0
     assert "614" in result.output
     assert "Woodpecker" in result.output
-    data = json.loads(runner.invoke(app, ["--json", "search", "woodpeckr"]).output)
+    data = json.loads(runner.invoke(app, ["search", "woodpeckr", "--json"]).output)
     assert [comic["num"] for comic in data] == [614]
 
 
@@ -91,12 +91,13 @@ def test_explain_prints_text() -> None:
     assert result.output.startswith("Beret Guy observes a woodpecker")
 
 
-def test_sync_reports_count() -> None:
+def test_sync_reports_count(fake_client: FakeSites) -> None:
     """Sync and sync --full report how many comics were added."""
+    fake_client.latest["num"] = 4
     assert "1 new comic" in runner.invoke(app, ["sync"]).output
     result = runner.invoke(app, ["sync", "--full"])
     assert result.exit_code == 0
-    assert "new comic" in result.output
+    assert "2 new comics" in result.output
 
 
 def test_resync_reports_count() -> None:
@@ -116,7 +117,7 @@ def test_db_option_is_used(tmp_path: Path) -> None:
 
 def test_explain_json() -> None:
     """Explain --json wraps the text in an object."""
-    data = json.loads(runner.invoke(app, ["--json", "explain", "614"]).output)
+    data = json.loads(runner.invoke(app, ["explain", "614", "--json"]).output)
     assert data["num"] == 614
     assert data["explanation"].startswith("Beret Guy")
 
@@ -143,3 +144,22 @@ def test_open_client_uses_default_db(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     client = real_open_client(None)
     assert client.store.path == tmp_path / "env.sqlite3"
     client.store.close()
+
+
+def test_errors_go_to_stderr_and_keep_stdout_clean() -> None:
+    """With --json a failure leaves stdout empty so pipelines never see non-JSON."""
+    result = runner.invoke(app, ["show", "404", "--json"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "no comic 404" in result.stderr
+
+
+def test_titles_with_brackets_are_printed_literally() -> None:
+    """Rich markup in comic text must not be interpreted or crash the output."""
+    runner.invoke(app, ["show", "403"])
+    result = runner.invoke(app, ["search", "pickup"])
+    assert result.exit_code == 0
+    assert "Convincing [/] Pickup Line" in result.output
+    shown = runner.invoke(app, ["show", "403"])
+    assert shown.exit_code == 0
+    assert "see [sic] and [/b] end" in shown.output

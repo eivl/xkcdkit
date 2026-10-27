@@ -3,13 +3,14 @@
 import datetime as dt
 import re
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 TEMPLATE = re.compile(r"\{\{([^{}]*)\}\}")
 LINK = re.compile(r"\[\[([^\]|]*)(?:\|([^\]]*))?\]\]")
-EXTERNAL_LINK = re.compile(r"\[\w+://\S+\s+([^\]]*)\]")
+EXTERNAL_LINK = re.compile(r"\[\w+://[^\s\]]+(?:\s+([^\]]*))?\]")
 TAG = re.compile(r"<ref[^>]*/>|<ref[^>]*>.*?</ref>|<[^>]+>", re.DOTALL)
-HEADING = re.compile(r"^==+\s*(.*?)\s*==+\s*$", re.MULTILINE)
+SECTION = re.compile(r"^==([^=].*?)==\s*$", re.MULTILINE)
+SUBHEADING = re.compile(r"^=+\s*(.*?)\s*=+\s*$", re.MULTILINE)
 
 
 class Comic(BaseModel):
@@ -18,8 +19,6 @@ class Comic(BaseModel):
     Field names match the xkcd JSON so the payload can be validated directly.
     The explanation fields are filled from explainxkcd when available.
     """
-
-    model_config = ConfigDict(coerce_numbers_to_str=False)
 
     num: int
     title: str
@@ -57,7 +56,7 @@ class ArchiveEntry(BaseModel):
     """One line of the xkcd archive page: number, date and title."""
 
     num: int
-    date: dt.date = Field(description="Publication date.")
+    date: dt.date
     title: str
 
     @field_validator("date", mode="before")
@@ -72,11 +71,11 @@ class ArchiveEntry(BaseModel):
 
 def explanation_section(wikitext: str) -> str:
     """Return the body of the Explanation section, or the whole text if unsectioned."""
-    headings = list(HEADING.finditer(wikitext))
+    headings = list(SECTION.finditer(wikitext))
     if not headings:
         return wikitext
     for index, heading in enumerate(headings):
-        if heading.group(1).lower() == "explanation":
+        if heading.group(1).strip().lower() == "explanation":
             end = headings[index + 1].start() if index + 1 < len(headings) else len(wikitext)
             return wikitext[heading.end() : end]
     return ""
@@ -98,12 +97,12 @@ def wikitext_to_text(wikitext: str | None) -> str:
     """
     if not wikitext:
         return ""
-    text = explanation_section(wikitext)
+    text = SUBHEADING.sub(r"\1", explanation_section(wikitext))
     while TEMPLATE.search(text):
         text = TEMPLATE.sub(expand_template, text)
     text = TAG.sub("", text)
     text = LINK.sub(lambda m: m.group(2) or m.group(1), text)
-    text = EXTERNAL_LINK.sub(r"\1", text)
+    text = EXTERNAL_LINK.sub(lambda m: m.group(1) or "", text)
     text = text.replace("'''", "").replace("''", "")
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
     return "\n\n".join(line for line in lines if line)

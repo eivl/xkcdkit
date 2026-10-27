@@ -15,7 +15,8 @@ from xkcdkit.models import ArchiveEntry, Comic
 
 XKCD = "https://xkcd.com"
 EXPLAIN_API = "https://www.explainxkcd.com/wiki/api.php"
-ARCHIVE_LINK = re.compile(r'<a href="/(\d+)/" title="([^"]+)">([^<]*)</a>')
+ARCHIVE_LINK = re.compile(r'<a href="/(\d+)/" title="([^"]+)">(.*?)</a>', re.DOTALL)
+HTML_TAG = re.compile(r"</?[a-z][a-z0-9]*(?:\s[^>]*)?>")
 
 
 def user_agent() -> str:
@@ -45,7 +46,7 @@ async def fetch_comic(client: httpx2.AsyncClient, num: int | None) -> Comic:
 def parse_archive(page: str) -> list[ArchiveEntry]:
     """Turn the archive page's anchors into entries, in page order (newest first)."""
     return [
-        ArchiveEntry(num=int(num), date=date, title=html.unescape(title))
+        ArchiveEntry(num=int(num), date=date, title=html.unescape(HTML_TAG.sub("", title)))
         for num, date, title in ARCHIVE_LINK.findall(page)
     ]
 

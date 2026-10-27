@@ -27,11 +27,17 @@ class FakeSites:
     def __init__(self) -> None:
         """Start with no requests seen."""
         self.requests: list[str] = []
-        self.latest = json.loads((FIXTURES / "latest.json").read_text())
-        self.comic = json.loads((FIXTURES / "614.json").read_text())
-        self.explain = json.loads((FIXTURES / "explain_614.json").read_text())
-        self.missing = json.loads((FIXTURES / "explain_missing.json").read_text())
-        self.archive = (FIXTURES / "archive.html").read_text()
+        self.latest = json.loads((FIXTURES / "latest.json").read_text(encoding="utf-8"))
+        self.comic = json.loads((FIXTURES / "614.json").read_text(encoding="utf-8"))
+        self.explain = json.loads((FIXTURES / "explain_614.json").read_text(encoding="utf-8"))
+        self.missing = json.loads((FIXTURES / "explain_missing.json").read_text(encoding="utf-8"))
+        self.archive = (FIXTURES / "archive.html").read_text(encoding="utf-8")
+        self.others = {
+            1: {"title": "Barrel - Part 1"},
+            2: {"title": "Petit Trees (sketch)"},
+            403: {"title": "Convincing [/] Pickup Line", "alt": "see [sic] and [/b] end [link=x]y[/link]"},
+            3315: {"title": "Forms of Water"},
+        }
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         """Answer a request the way the real sites would."""
@@ -52,8 +58,10 @@ class FakeSites:
             return httpx2.Response(200, json=self.comic)
         if num == 500:
             return httpx2.Response(500, text="boom")
-        if num in {1, 2, 403, 3315, 3316}:
-            return httpx2.Response(200, json={**self.comic, "num": num, "title": f"Comic {num}"})
+        if num == self.latest["num"]:
+            return httpx2.Response(200, json=self.latest)
+        if num in self.others:
+            return httpx2.Response(200, json={**self.comic, "num": num, **self.others[num]})
         return httpx2.Response(404, text="not found")
 
     def client(self) -> httpx2.AsyncClient:
@@ -128,11 +136,18 @@ def test_parse_archive(archive_html: str) -> None:
     assert all(entry.num > 0 for entry in entries)
 
 
+def test_parse_archive_keeps_titles_with_inline_html(archive_html: str) -> None:
+    """Two real titles wrap words in a span or contain a literal <City> placeholder."""
+    titles = {entry.num: entry.title for entry in parse_archive(archive_html)}
+    assert titles[472] == "House of Pancakes"
+    assert titles[3142] == "<City>-Style Pizza"
+
+
 async def test_fetch_archive(sites: FakeSites) -> None:
     """The archive page is fetched and parsed."""
     async with sites.client() as client:
         entries = await fetch_archive(client)
-    assert len(entries) >= 7
+    assert len(entries) == 9
 
 
 async def test_fetch_explanation(sites: FakeSites) -> None:
@@ -171,7 +186,7 @@ class BrokenSites(FakeSites):
 async def test_server_errors_are_wrapped_everywhere() -> None:
     """Archive, explanation and image fetches all raise XKCDError on bad status."""
     sites = BrokenSites()
-    comic = Comic.model_validate(json.loads((FIXTURES / "614.json").read_text()))
+    comic = Comic.model_validate(json.loads((FIXTURES / "614.json").read_text(encoding="utf-8")))
     async with sites.client() as client:
         with pytest.raises(XKCDError, match="503"):
             await fetch_archive(client)

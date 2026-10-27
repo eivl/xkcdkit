@@ -86,11 +86,13 @@ xkcd resync              # re-fetch comics older than 30 days or still missing a
 xkcd tui                 # open the browser
 ```
 
-Add `--json` before the command to get machine-readable output for piping:
+Add `--json` to `show`, `latest`, `random`, `search` or `explain` for
+machine-readable output. Nothing but the JSON goes to stdout; errors go to
+stderr with exit code 1, so pipelines stay clean:
 
 ```sh
-xkcd --json show 614 | jq .alt
-xkcd --json search "sandwich" | jq '.[].num'
+xkcd show 614 --json | jq .alt
+xkcd search "sandwich" --json | jq '.[].num'
 ```
 
 `--no-image` skips the picture. Images are also skipped automatically when
@@ -133,7 +135,9 @@ async with AsyncXKCD() as xk:
 ```
 
 A blocking twin exists for scripts and the REPL. It runs each call on its own
-event loop, so it cannot be used from inside async code.
+event loop, so it cannot be used from inside async code, and it opens and
+closes its connections per call (pass `client_factory=` rather than a client
+if you need to customise HTTP).
 
 ```python
 from xkcdkit import XKCD
@@ -142,23 +146,25 @@ with XKCD() as xk:
     print(xk.random().title)
 ```
 
-A minimal discord.py command looks like this:
+In a long-running program such as a Discord bot, keep one `AsyncXKCD` open
+for the lifetime of the process: it holds the HTTP connection pool and the
+database connection.
 
 ```python
+from xkcdkit import AsyncXKCD, ComicNotFound
+
+xk = AsyncXKCD()  # created once; call `await xk.close()` on shutdown
+
+
 @bot.command()
 async def xkcd(ctx, num: int):
-    async with AsyncXKCD() as xk:
-        try:
-            comic = await xk.get(num)
-        except ComicNotFound:
-            await ctx.send(f"There is no xkcd {num}.")
-            return
+    try:
+        comic = await xk.get(num)
+    except ComicNotFound:
+        await ctx.send(f"There is no xkcd {num}.")
+        return
     await ctx.send(f"**{comic.title}**\n{comic.img}\n*{comic.alt}*")
 ```
-
-Keep one `AsyncXKCD` open for the lifetime of a long-running program rather
-than creating one per request; it holds an HTTP connection pool and the
-database connection.
 
 ### The `Comic` model
 
@@ -234,7 +240,8 @@ On every push to `main`, python-semantic-release reads the commit messages,
 bumps the version in `pyproject.toml`, updates `CHANGELOG.md`, tags the
 release and publishes to PyPI through trusted publishing. `feat:` bumps the
 minor version, `fix:` the patch version, and a `BREAKING CHANGE:` footer the
-major version.
+major version. The release commit also re-locks `uv.lock` so that
+`uv sync --locked` keeps working after the bump.
 
 Trusted publishing has to be registered once on PyPI under
 *Publishing → Add a new pending publisher* with these values:

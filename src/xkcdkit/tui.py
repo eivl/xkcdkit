@@ -5,11 +5,13 @@ from typing import ClassVar
 
 from PIL import Image as PILImage
 from rapidfuzz import fuzz
+from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Footer, Header, Input, ListItem, ListView, Static, TabbedContent, TabPane
+from textual.widgets import Footer, Header, Input, OptionList, Static, TabbedContent, TabPane
+from textual.widgets.option_list import Option
 from textual_image.widget import Image
 
 from xkcdkit import XKCDError
@@ -20,14 +22,9 @@ from xkcdkit.sources import fetch_image
 HELP = "j/k move  / filter  enter open  r random  l latest  i image  s sync  q quit"
 
 
-class ArchiveItem(ListItem):
-    """One archive row carrying its comic number."""
-
-    def __init__(self, entry: ArchiveEntry) -> None:
-        """Render the entry as number and title."""
-        super().__init__(Static(f"[bold]{entry.num:>5}[/]  {entry.title}", markup=True))
-        self.num = entry.num
-        self.title = entry.title
+def option(entry: ArchiveEntry) -> Option:
+    """An archive row: bold number, then the title, keyed by the comic number."""
+    return Option(Text.assemble((f"{entry.num:>5}", "bold"), "  ", entry.title), id=str(entry.num))
 
 
 class XKCDApp(App[None]):
@@ -35,7 +32,7 @@ class XKCDApp(App[None]):
 
     TITLE = "xkcd"
     CSS = """
-    #archive-pane { width: 36; border: round $primary; }
+    #archive-pane { width: 40; border: round $primary; }
     #archive { height: 1fr; }
     #image-pane { height: 2fr; border: round $secondary; align: center middle; }
     TabbedContent { height: 1fr; }
@@ -65,38 +62,33 @@ class XKCDApp(App[None]):
         with Horizontal():
             with Vertical(id="archive-pane"):
                 yield Input(placeholder="filter titles", id="filter")
-                yield ListView(id="archive")
+                yield OptionList(id="archive")
             with Vertical():
                 yield Vertical(Image(id="image"), id="image-pane")
                 with TabbedContent():
                     with TabPane("Alt text", id="tab-alt"):
-                        yield VerticalScroll(Static(id="alt", classes="text"))
+                        yield VerticalScroll(Static(id="alt", classes="text", markup=False))
                     with TabPane("Transcript", id="tab-transcript"):
-                        yield VerticalScroll(Static(id="transcript", classes="text"))
+                        yield VerticalScroll(Static(id="transcript", classes="text", markup=False))
                     with TabPane("Explanation", id="tab-explanation"):
-                        yield VerticalScroll(Static(id="explanation", classes="text"))
+                        yield VerticalScroll(Static(id="explanation", classes="text", markup=False))
         yield Footer()
 
-    async def on_mount(self) -> None:
-        """Fill the archive list (syncing it if empty) and open the latest comic."""
-        self.query_one(ListView).focus()
-        await self.load_archive()
-        self.open(None)
-
-    async def load_archive(self) -> None:
-        """Read the archive index from the store, fetching it on first run."""
+    def on_mount(self) -> None:
+        """Show the cached archive (syncing it on first run) and open the latest comic."""
+        self.query_one(OptionList).focus()
         self.entries = self.client.store.archive()
-        if not self.entries:
-            await self.client.sync()
-            self.entries = self.client.store.archive()
         self.show_entries(self.entries)
+        if not self.entries:
+            self.action_sync()
+        self.open(None)
 
     def show_entries(self, entries: list[ArchiveEntry]) -> None:
         """Replace the list contents."""
-        archive = self.query_one(ListView)
-        archive.clear()
-        archive.extend(ArchiveItem(entry) for entry in entries)
-        archive.index = 0
+        archive = self.query_one(OptionList)
+        archive.clear_options()
+        archive.add_options(option(entry) for entry in entries)
+        archive.highlighted = 0 if entries else None
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Fuzzy-filter the archive list as the user types."""
@@ -109,20 +101,24 @@ class XKCDApp(App[None]):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Enter in the filter opens the first match."""
-        first = self.query(ArchiveItem).first() if self.query(ArchiveItem) else None
-        if first:
-            self.open(first.num)
+        archive = self.query_one(OptionList)
+        if archive.option_count:
+            self.open(int(str(archive.get_option_at_index(0).id)))
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Enter on a row opens that comic."""
-        if isinstance(event.item, ArchiveItem):
-            self.open(event.item.num)
+        self.open(int(str(event.option.id)))
 
-    @work(exclusive=True)
+    @work(exclusive=True, group="open")
     async def open(self, num: int | None) -> None:
-        """Fetch comic ``num`` (or the latest) and show it."""
+        """Fetch comic ``num`` (or the latest, or a random one for -1) and show it."""
         try:
-            comic = await self.client.latest() if num is None else await self.client.get(num)
+            if num is None:
+                comic = await self.client.latest()
+            elif num < 0:
+                comic = await self.client.random()
+            else:
+                comic = await self.client.get(num)
             await self.show_comic(comic)
         except XKCDError as exc:
             self.notify(str(exc), severity="error")
@@ -147,7 +143,7 @@ class XKCDApp(App[None]):
 
     def action_cursor(self, direction: str) -> None:
         """Move the archive cursor with j/k."""
-        archive = self.query_one(ListView)
+        archive = self.query_one(OptionList)
         archive.action_cursor_down() if direction == "down" else archive.action_cursor_up()
 
     def action_focus_filter(self) -> None:
@@ -156,12 +152,7 @@ class XKCDApp(App[None]):
 
     def action_random(self) -> None:
         """Open a random comic."""
-        self.open_random()
-
-    @work(exclusive=True)
-    async def open_random(self) -> None:
-        """Worker behind the r key."""
-        await self.show_comic(await self.client.random())
+        self.open(-1)
 
     def action_latest(self) -> None:
         """Open the newest comic."""
@@ -172,11 +163,16 @@ class XKCDApp(App[None]):
         pane = self.query_one("#image-pane")
         pane.display = not pane.display
 
-    @work(exclusive=True)
+    @work(exclusive=True, group="sync")
     async def action_sync(self) -> None:
         """Refresh the archive and latest comic, then report."""
-        added = await self.client.sync()
-        await self.load_archive()
+        try:
+            added = await self.client.sync()
+        except XKCDError as exc:
+            self.notify(str(exc), severity="error")
+            return
+        self.entries = self.client.store.archive()
+        self.show_entries(self.entries)
         self.notify(f"Synced: {added} new comic(s).")
 
     def action_help(self) -> None:
@@ -185,7 +181,8 @@ class XKCDApp(App[None]):
 
 
 def run_tui(client: AsyncXKCD) -> None:
-    """Start the browser. Probes the terminal for image support before Textual takes over."""
-    import textual_image.renderable  # noqa: F401  (must run before the app starts)
-
-    XKCDApp(client).run()
+    """Start the browser and close the client when it exits."""
+    try:
+        XKCDApp(client).run()
+    finally:
+        client.store.close()

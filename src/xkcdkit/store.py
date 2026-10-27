@@ -109,7 +109,7 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM archive")
             self.db.executemany(
-                "INSERT INTO archive VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO archive VALUES (?, ?, ?)",
                 [(e.num, e.date.isoformat(), e.title) for e in entries],
             )
 
