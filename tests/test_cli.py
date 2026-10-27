@@ -217,10 +217,12 @@ def test_margin_frames_the_card(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
     padded = [line.rstrip() for line in runner.invoke(app, ["show", "614"]).stdout.split("\n")]
     assert padded[0] == ""
-    assert padded[1].startswith("  ╭")
+    assert padded[1].startswith("  ")  # two columns of margin, then the panel's top edge
+    assert "#614" in padded[1]
     path.write_text("[cli]\nmargin = 0\n", encoding="utf-8")
-    tight = runner.invoke(app, ["show", "614"]).stdout
-    assert tight.startswith("╭")
+    tight = runner.invoke(app, ["show", "614"]).stdout.split("\n")[0]
+    assert not tight.startswith(" ")  # the panel's box glyph differs per platform; only the indent matters
+    assert "#614" in tight
 
 
 def test_shell_completion_is_offered() -> None:
