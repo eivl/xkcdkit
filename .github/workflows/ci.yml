@@ -54,7 +54,7 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python }}
       - run: uv sync --locked --all-groups
-      - run: uv run tox -e py${PYTHON//./}
+      - run: uv run tox -e "py${PYTHON//./}"
         shell: bash
         env:
           PYTHON: ${{ matrix.python }}
