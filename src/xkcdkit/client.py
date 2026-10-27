@@ -13,7 +13,14 @@ import httpx2
 
 from xkcdkit import ComicNotFound, XKCDError
 from xkcdkit.models import ArchiveEntry, Comic
-from xkcdkit.sources import fetch_archive, fetch_comic, fetch_explanation, user_agent
+from xkcdkit.sources import (
+    EXPLAIN_BATCH,
+    fetch_archive,
+    fetch_comic,
+    fetch_explanation,
+    fetch_explanations,
+    user_agent,
+)
 from xkcdkit.store import Store, utc_now
 
 Progress = Callable[[int, int], None]
@@ -72,6 +79,10 @@ class AsyncXKCD:
         """Attach the explainxkcd page when it exists and stamp the sync time."""
         found = await fetch_explanation(self.http, comic.num)
         self.last_explain = time.monotonic()
+        return self.attach(comic, found)
+
+    def attach(self, comic: Comic, found: tuple[str, int] | None) -> Comic:
+        """Copy a comic with explanation data (or a note of its absence) and a fresh sync time."""
         wikitext, revid = found if found else (None, None)
         return comic.model_copy(
             update={
@@ -155,34 +166,38 @@ class AsyncXKCD:
         return await self.fetch_many(self.store.stale(max_age), progress)
 
     async def fetch_many(self, nums: list[int], progress: Progress | None, explain: bool = True) -> int:
-        """Fetch and store comics with several workers; explainxkcd is paced to one request at a time.
+        """Fetch and store comics in batches of ``EXPLAIN_BATCH``.
 
-        xkcd.com requests overlap freely. Each stored comic is committed at once, so an
-        interrupted run keeps everything finished so far. Numbers xkcd lacks are skipped.
+        Within a batch xkcd.com is fetched concurrently and explainxkcd answers for the
+        whole batch in one paced request. Each batch is committed as a unit, so an
+        interrupted run keeps every finished batch. Numbers xkcd lacks are skipped.
         """
-        pending, done, fetched = list(reversed(nums)), 0, 0
-
-        async def worker() -> None:
-            nonlocal done, fetched
-            while pending:
-                num = pending.pop()
-                try:
-                    comic = await fetch_comic(self.http, num)
-                    if explain:
-                        await self.pace()
-                        comic = await self.complete(comic)
-                    self.store.replace(comic)
-                    fetched += 1
-                except ComicNotFound:
-                    pass
-                done += 1
-                if progress:
-                    progress(done, len(nums))
-
-        async with asyncio.TaskGroup() as group:
-            for _ in range(min(WORKERS, len(nums))):
-                group.create_task(worker())
+        fetched = 0
+        for start in range(0, len(nums), EXPLAIN_BATCH):
+            comics = await self.fetch_comics(nums[start : start + EXPLAIN_BATCH])
+            if explain and comics:
+                await self.pace()
+                found = await fetch_explanations(self.http, [comic.num for comic in comics])
+                comics = [self.attach(comic, found[comic.num]) for comic in comics]
+            for comic in comics:
+                self.store.replace(comic)
+            fetched += len(comics)
+            if progress:
+                progress(min(start + EXPLAIN_BATCH, len(nums)), len(nums))
         return fetched
+
+    async def fetch_comics(self, nums: list[int]) -> list[Comic]:
+        """Fetch several comics from xkcd.com, a few at a time, skipping numbers it lacks."""
+        limit = asyncio.Semaphore(WORKERS)
+
+        async def one(num: int) -> Comic | None:
+            async with limit:
+                try:
+                    return await fetch_comic(self.http, num)
+                except ComicNotFound:
+                    return None
+
+        return [comic for comic in await asyncio.gather(*(one(num) for num in nums)) if comic]
 
     async def pace(self) -> None:
         """Wait until ``explain_delay`` has passed since the previous explainxkcd request."""

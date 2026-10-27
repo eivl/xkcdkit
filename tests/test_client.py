@@ -121,7 +121,7 @@ async def test_sync_full_walks_every_number_up_to_latest(xk: AsyncXKCD, sites: F
     fetched = await xk.sync(full=True, progress=lambda done, total: seen.append((done, total)))
     assert fetched == 3
     assert xk.store.nums() == [1, 2, 4]
-    assert seen == [(1, 3), (2, 3), (3, 3)]
+    assert seen == [(3, 3)]  # progress is reported per batch of up to fifty
     assert xk.store.get_meta("last_full_sync_at") is not None
 
 
@@ -143,7 +143,7 @@ async def test_resync_refetches_stale(xk: AsyncXKCD, sites: FakeSites) -> None:
     xk.store.replace(old)
     before = len(sites.requests)
     assert await xk.resync(max_age=timedelta(days=30)) == 2
-    assert len(sites.requests) == before + 4
+    assert len(sites.requests) == before + 3  # two comic fetches and one batched explanation query
     refreshed = xk.store.get(614)
     assert refreshed is not None
     assert refreshed.synced_at is not None
@@ -194,10 +194,10 @@ async def test_full_sync_overlaps_xkcd_fetches_and_paces_explainxkcd(xk: AsyncXK
     await xk.sync(full=True)
     explains = [t for host, t in sites.times if host == "www.explainxkcd.com"]
     gaps = [b - a for a, b in itertools.pairwise(explains)]
-    assert len(explains) == 3  # latest (4), then 1 and 2; 3 does not exist
+    assert len(explains) == 2  # one for the latest comic, one batch for 1 and 2 (3 does not exist)
     assert all(gap >= 0.14 for gap in gaps)
     comics = [t for host, t in sites.times if host == "xkcd.com"]
-    assert max(comics) < explains[1] + 0.05  # all comic fetches done while the first explanation waits
+    assert max(comics) < explains[1]  # every comic fetch finished while the batch waited its turn
 
 
 async def test_full_sync_without_explanations_is_completed_later(xk: AsyncXKCD, sites: FakeSites) -> None:
@@ -215,19 +215,20 @@ async def test_full_sync_without_explanations_is_completed_later(xk: AsyncXKCD, 
     assert all(getattr(xk.store.get(n), "explanation_missing", None) is True for n in (1, 2, 4))
 
 
-async def test_cancelled_sync_keeps_what_was_stored(xk: AsyncXKCD, sites: FakeSites) -> None:
-    """Cancelling a full sync (what Ctrl-C does) leaves every finished comic committed."""
-    sites.latest["num"] = 4
+async def test_cancelled_sync_keeps_finished_batches(xk: AsyncXKCD, sites: FakeSites) -> None:
+    """Cancelling a full sync (what Ctrl-C does) keeps every batch that was committed."""
+    sites.latest["num"] = 60
     xk.explain_delay = 0.2
     task: asyncio.Task[int] | None = None
 
-    def stop_after_two(done: int, total: int) -> None:
-        if done == 2 and task is not None:
+    def stop_after_first_batch(done: int, total: int) -> None:
+        if done == 50 and task is not None:
             task.cancel()
 
-    task = asyncio.create_task(xk.sync(full=True, progress=stop_after_two))
+    task = asyncio.create_task(xk.sync(full=True, progress=stop_after_first_batch))
     with pytest.raises(asyncio.CancelledError):
         await task
     with Store(xk.store.path) as fresh_store:
         assert fresh_store.has(1)
-        assert not fresh_store.has(2)
+        assert fresh_store.has(2)
+        assert not fresh_store.has(55)

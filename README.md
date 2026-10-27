@@ -81,8 +81,8 @@ xkcd random              # a random comic
 xkcd search "woodpecker" # fuzzy search over cached titles, alt text, transcripts and explanations
 xkcd explain 614         # just the explanation, as plain text
 xkcd sync                # refresh the archive index and the latest comic
-xkcd sync --full         # download every comic and explanation (under an hour, see below)
-xkcd sync --full --no-explain  # comics only, a minute or two; explanations come later
+xkcd sync --full         # download every comic and explanation (a couple of minutes)
+xkcd sync --full --no-explain  # comics only, under a minute; explanations come later
 xkcd resync              # re-fetch comics older than 30 days or still missing an explanation
 xkcd tui                 # open the browser
 ```
@@ -240,19 +240,18 @@ async def xkcd(ctx, num: int):
 ### Being polite to explainxkcd
 
 explainxkcd is a volunteer-run wiki. Its robots policy asks for one request
-per second, so a full sync sends at most one explainxkcd request per second
-and a User-Agent that names this project and its repository. xkcd.com has no
-such limit and is fetched by several workers at once, so explanations are the
-pacing item: a complete first `sync --full` takes a little under an hour for
-the whole archive.
+per second, so bulk syncs send at most one explainxkcd request per second and
+a User-Agent that names this project and its repository. To stay fast anyway,
+each request asks the MediaWiki API for fifty pages at once, the maximum it
+allows, so the whole archive's explanations arrive in about seventy requests.
+xkcd.com has no such limit and is fetched by several workers at once. A
+complete first `sync --full` takes a couple of minutes.
 
-Two ways to shorten the wait:
-
-- `xkcd sync --full --no-explain` fetches only the comics, which takes a
-  minute or two. Explanations are then filled in on demand when you open a
-  comic, or in bulk with `xkcd resync`, which is paced the same way.
-- Ctrl-C at any point is safe. Every comic is committed to the database the
-  moment it is fetched, and the next `sync --full` skips everything already
+- `xkcd sync --full --no-explain` fetches only the comics, in under a minute.
+  Explanations are then filled in on demand when you open a comic, or in bulk
+  with `xkcd resync`, paced the same way.
+- Ctrl-C at any point is safe. Each batch of fifty is committed as soon as it
+  is fetched, and the next `sync --full` or `resync` skips everything already
   cached, so you can sync in several sittings.
 
 The sync walks every number from 1 to the latest comic, so it does not depend

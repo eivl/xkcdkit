@@ -30,7 +30,8 @@ def comic_json() -> dict[str, Any]:
 @pytest.fixture
 def wikitext() -> str:
     """Full explainxkcd wikitext for comic 614."""
-    return load_json("explain_614.json")["parse"]["wikitext"]  # type: ignore[no-any-return]
+    page = load_json("explain_614.json")["query"]["pages"][0]
+    return page["revisions"][0]["slots"]["main"]["content"]  # type: ignore[no-any-return]
 
 
 @pytest.fixture

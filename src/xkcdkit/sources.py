@@ -15,6 +15,7 @@ from xkcdkit.models import ArchiveEntry, Comic
 
 XKCD = "https://xkcd.com"
 EXPLAIN_API = "https://www.explainxkcd.com/wiki/api.php"
+EXPLAIN_BATCH = 50  # pages per API request allowed for ordinary users
 ARCHIVE_LINK = re.compile(r'<a href="/(\d+)/" title="([^"]+)">(.*?)</a>', re.DOTALL)
 HTML_TAG = re.compile(r"</?[a-z][a-z0-9]*(?:\s[^>]*)?>")
 
@@ -59,15 +60,23 @@ async def fetch_archive(client: httpx2.AsyncClient) -> list[ArchiveEntry]:
     return parse_archive(response.text)
 
 
-async def fetch_explanation(client: httpx2.AsyncClient, num: int) -> tuple[str, int] | None:
-    """Fetch the explainxkcd page for ``num`` as ``(wikitext, revid)``, or None if absent."""
+async def fetch_explanations(
+    client: httpx2.AsyncClient, nums: list[int]
+) -> dict[int, tuple[str, int] | None]:
+    """Fetch up to ``EXPLAIN_BATCH`` explainxkcd pages in one request, keyed by comic number.
+
+    The wiki pages are named ``614: Woodpecker``; the bare number redirects there, and
+    the API resolves that for us. Numbers without a page map to None.
+    """
     response = await request(
         client,
         EXPLAIN_API,
-        action="parse",
-        page=str(num),
+        action="query",
+        titles="|".join(str(num) for num in nums),
         redirects=1,
-        prop="wikitext|revid",
+        prop="revisions",
+        rvprop="ids|content",
+        rvslots="main",
         format="json",
         formatversion=2,
     )
@@ -75,10 +84,23 @@ async def fetch_explanation(client: httpx2.AsyncClient, num: int) -> tuple[str, 
         raise XKCDError(f"explainxkcd: HTTP {response.status_code}")
     payload = response.json()
     if "error" in payload:
-        if payload["error"].get("code") == "missingtitle":
-            return None
         raise XKCDError(f"explainxkcd: {payload['error'].get('info', 'unknown error')}")
-    return payload["parse"]["wikitext"], int(payload["parse"]["revid"])
+    target = {r["from"]: r["to"] for r in payload["query"].get("redirects", [])}
+    pages = {page["title"]: page for page in payload["query"]["pages"]}
+    return {num: page_content(pages.get(target.get(str(num), str(num)))) for num in nums}
+
+
+def page_content(page: dict[str, Any] | None) -> tuple[str, int] | None:
+    """The latest revision's wikitext and id, or None for an absent page."""
+    if not page or page.get("missing"):
+        return None
+    revision = page["revisions"][0]
+    return revision["slots"]["main"]["content"], int(revision["revid"])
+
+
+async def fetch_explanation(client: httpx2.AsyncClient, num: int) -> tuple[str, int] | None:
+    """Fetch the explainxkcd page for ``num`` as ``(wikitext, revid)``, or None if absent."""
+    return (await fetch_explanations(client, [num]))[num]
 
 
 async def fetch_image(client: httpx2.AsyncClient, comic: Comic) -> bytes:

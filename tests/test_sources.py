@@ -3,6 +3,7 @@
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx2
 import pytest
@@ -13,6 +14,7 @@ from xkcdkit.sources import (
     fetch_archive,
     fetch_comic,
     fetch_explanation,
+    fetch_explanations,
     fetch_image,
     parse_archive,
     user_agent,
@@ -32,14 +34,21 @@ class FakeSites:
         self.latest = json.loads((FIXTURES / "latest.json").read_text(encoding="utf-8"))
         self.comic = json.loads((FIXTURES / "614.json").read_text(encoding="utf-8"))
         self.explain = json.loads((FIXTURES / "explain_614.json").read_text(encoding="utf-8"))
-        self.missing = json.loads((FIXTURES / "explain_missing.json").read_text(encoding="utf-8"))
         self.archive = (FIXTURES / "archive.html").read_text(encoding="utf-8")
         self.others = {
             1: {"title": "Barrel - Part 1"},
             2: {"title": "Petit Trees (sketch)"},
             403: {"title": "Convincing [/] Pickup Line", "alt": "see [sic] and [/b] end [link=x]y[/link]"},
+            55: {"title": "Comic 55"},
             3315: {"title": "Forms of Water"},
         }
+
+    def explain_response(self, titles: list[str]) -> dict[str, Any]:
+        """A MediaWiki query result: the real 614 page, every other title missing."""
+        page = self.explain["query"]["pages"][0]
+        redirects = [{"from": t, "to": page["title"]} for t in titles if t == "614"]
+        pages = [page if t == "614" else {"ns": 0, "title": t, "missing": True} for t in titles]
+        return {"batchcomplete": True, "query": {"redirects": redirects, "pages": pages}}
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         """Answer a request the way the real sites would."""
@@ -50,8 +59,7 @@ class FakeSites:
         if host == "imgs.xkcd.com":
             return httpx2.Response(200, content=PNG)
         if host == "www.explainxkcd.com":
-            page = request.url.params["page"]
-            return httpx2.Response(200, json=self.explain if page == "614" else self.missing)
+            return httpx2.Response(200, json=self.explain_response(request.url.params["titles"].split("|")))
         if path == "/archive/":
             return httpx2.Response(200, text=self.archive)
         if path == "/info.0.json":
@@ -164,9 +172,22 @@ async def test_fetch_explanation(sites: FakeSites) -> None:
 
 
 async def test_fetch_explanation_missing(sites: FakeSites) -> None:
-    """A missingtitle error means there is no page, not a failure."""
+    """A page the wiki reports as missing is None, not a failure."""
     async with sites.client() as client:
         assert await fetch_explanation(client, 99999) is None
+
+
+async def test_fetch_explanations_batches_many_pages_in_one_request(sites: FakeSites) -> None:
+    """Several numbers go out as one titles= query; redirects are followed, misses are None."""
+    async with sites.client() as client:
+        found = await fetch_explanations(client, [614, 99999, 1])
+    assert len(sites.requests) == 1
+    assert "titles=614%7C99999%7C1" in sites.requests[0]
+    assert found[614] is not None
+    assert found[614][1] == 216714
+    assert "==Explanation==" in found[614][0]
+    assert found[99999] is None
+    assert found[1] is None
 
 
 async def test_fetch_image(sites: FakeSites) -> None:
@@ -181,7 +202,7 @@ class BrokenSites(FakeSites):
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         """Fail everything."""
-        if request.url.host == "www.explainxkcd.com" and request.url.params["page"] == "7":
+        if request.url.host == "www.explainxkcd.com" and request.url.params["titles"] == "7":
             return httpx2.Response(200, json={"error": {"code": "ratelimited", "info": "slow down"}})
         return httpx2.Response(503, text="down")
 
