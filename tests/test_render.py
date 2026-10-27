@@ -6,10 +6,11 @@ from typing import Any
 import pytest
 from PIL import Image as PILImage
 from rich.console import Console
+from rich.text import Text
 
 from xkcdkit import XKCDError
 from xkcdkit.models import Comic
-from xkcdkit.render import can_draw, comic_image, comic_text
+from xkcdkit.render import can_draw, comic_image, comic_text, framed
 
 
 def render(renderable: Any) -> str:
@@ -88,3 +89,16 @@ def test_comic_image_rejects_bad_bytes() -> None:
 def test_can_draw_is_false_without_a_tty() -> None:
     """Under test capture stdout is not a terminal, so no image should be attempted."""
     assert can_draw() is False
+
+
+def test_framed_adds_margin_around_the_output() -> None:
+    """A margin of 1 adds a blank line above and below and two spaces on each side."""
+    lines = [line.rstrip() for line in render(framed([Text("x")], margin=1)).split("\n")]
+    assert lines[0] == ""
+    assert lines[1] == "  x"
+    assert lines[2] == ""
+
+
+def test_framed_zero_margin_is_tight() -> None:
+    """margin=0 leaves the output untouched."""
+    assert render(framed([Text("x")], margin=0)) == "x\n"

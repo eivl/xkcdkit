@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from xkcdkit import XKCDError
-from xkcdkit.config import Settings, config_path, load_settings, write_default
+from xkcdkit.config import DEFAULT_TOML, Settings, config_path, dump, load_settings, write_default
 
 
 def test_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -29,6 +29,7 @@ def test_missing_file_gives_defaults(tmp_path: Path) -> None:
     assert settings.image.scale == 1.0
     assert settings.image.fit is False
     assert settings.tui.image_pane == 2
+    assert settings.cli.margin == 1
 
 
 def test_partial_file_overrides_only_what_it_sets(tmp_path: Path) -> None:
@@ -64,3 +65,23 @@ def test_write_default_creates_commented_file_once(tmp_path: Path) -> None:
     path.write_text("[image]\nscale = 5\n", encoding="utf-8")
     assert write_default(path) is False
     assert load_settings(path).image.scale == 5.0
+
+
+def test_dump_is_valid_toml_that_round_trips() -> None:
+    """dump() renders every section and key as TOML that loads back to the same settings."""
+    import tomllib
+
+    settings = Settings.model_validate({"image": {"scale": 2.5, "fit": True}, "cli": {"margin": 0}})
+    text = dump(settings)
+    assert "[image]" in text
+    assert "scale = 2.5" in text
+    assert "fit = true" in text
+    assert "margin = 0" in text
+    assert Settings.model_validate(tomllib.loads(text)) == settings
+
+
+def test_default_toml_matches_the_defaults() -> None:
+    """The commented default file and the model defaults never drift apart."""
+    import tomllib
+
+    assert Settings.model_validate(tomllib.loads(DEFAULT_TOML)) == Settings()

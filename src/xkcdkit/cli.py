@@ -7,17 +7,17 @@ from datetime import timedelta
 from typing import Annotated, Any
 
 import typer
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.text import Text
 
 from xkcdkit import XKCDError, __version__
 from xkcdkit.client import AsyncXKCD
-from xkcdkit.config import config_path, load_settings, write_default
+from xkcdkit.config import DEFAULT_TOML, config_path, dump, load_settings, write_default
 from xkcdkit.models import Comic
-from xkcdkit.render import can_draw, comic_image, comic_text
+from xkcdkit.render import can_draw, comic_image, comic_text, framed
 from xkcdkit.sources import fetch_image
 
-app = typer.Typer(help="xkcd comics in your terminal.", no_args_is_help=True, add_completion=False)
+app = typer.Typer(help="xkcd comics in your terminal.", no_args_is_help=True)
 console = Console()
 errors = Console(stderr=True)
 Num = Annotated[int, typer.Argument(help="Comic number.")]
@@ -55,6 +55,8 @@ def main(
 ) -> None:
     """Fetch, browse and search xkcd comics with explanations from explainxkcd."""
     ctx.obj = Settings(db=db)
+    if write_default():
+        errors.print(f"Created settings file: {config_path()}", markup=False, soft_wrap=True)
 
 
 def run(ctx: typer.Context, action: Callable[[AsyncXKCD], Awaitable[Any]]) -> Any:
@@ -86,23 +88,27 @@ class View:
     explain: bool = False
     scale: float = 1.0
     fit: bool = False
+    margin: int = 1
 
 
 def view(json: bool, no_image: bool, explain: bool, scale: float | None, fit: bool) -> View:
     """Combine command flags with the settings file; flags win."""
-    image = load_settings().image
-    return View(json, not no_image, explain, scale or image.scale, fit or image.fit)
+    settings = load_settings()
+    image = settings.image
+    return View(json, not no_image, explain, scale or image.scale, fit or image.fit, settings.cli.margin)
 
 
 async def present(xk: AsyncXKCD, pending: Awaitable[Comic], view: View) -> None:
-    """Await a comic and print it as JSON or as a card with an optional image."""
+    """Await a comic and print it as JSON or as a framed card with an optional image."""
     comic = await pending
     if view.json:
         console.print_json(comic.model_dump_json())
         return
+    parts: list[RenderableType] = []
     if view.image and can_draw():
-        console.print(comic_image(await fetch_image(xk.http, comic), view.scale, view.fit))
-    console.print(comic_text(comic, explain=view.explain))
+        parts.append(comic_image(await fetch_image(xk.http, comic), view.scale, view.fit))
+    parts.append(comic_text(comic, explain=view.explain))
+    console.print(framed(parts, view.margin))
 
 
 @app.command()
@@ -220,14 +226,21 @@ def tui(ctx: typer.Context) -> None:
 
 @app.command()
 def config(
-    init: Annotated[bool, typer.Option("--init", help="Create the file with defaults.")] = False,
+    init: Annotated[bool, typer.Option("--init", help="Create the file with defaults if missing.")] = False,
+    show_defaults: Annotated[bool, typer.Option("--show-defaults", help="Print the default file.")] = False,
 ) -> None:
-    """Show where settings live and what they are; --init writes a commented default file."""
+    """Show where settings live and their effective values.
+
+    Keys missing from the file take their defaults, so a new version never needs
+    the file rewritten; --show-defaults prints every key with its comment.
+    """
     path = config_path()
-    if init:
+    if show_defaults:
+        console.print(DEFAULT_TOML, markup=False, soft_wrap=True, end="")
+    elif init:
         console.print(
             f"{'created' if write_default(path) else 'exists'}: {path}", markup=False, soft_wrap=True
         )
-        return
-    console.print(f"settings file: {path}", markup=False, soft_wrap=True)
-    console.print_json(load_settings(path).model_dump_json())
+    else:
+        console.print(f"# settings file: {path}", markup=False, soft_wrap=True)
+        console.print(dump(load_settings(path)), markup=False, soft_wrap=True, end="")

@@ -1,5 +1,6 @@
 """User settings from a small TOML file in the platform config directory."""
 
+import json
 import os
 import tomllib
 from pathlib import Path
@@ -20,6 +21,11 @@ fit = false
 [tui]
 # Height of the image pane relative to the text pane (1 to 8). Change live with + and -.
 image_pane = 2
+
+[cli]
+# Blank space around a printed comic: lines above and below, twice as many columns
+# left and right. 0 gives a tight layout.
+margin = 1
 """
 
 
@@ -36,11 +42,28 @@ class TuiSettings(BaseModel):
     image_pane: int = Field(default=2, ge=1, le=8)
 
 
+class CliSettings(BaseModel):
+    """How the command line lays out its output."""
+
+    margin: int = Field(default=1, ge=0, le=8)
+
+
 class Settings(BaseModel):
     """All settings, mirroring the sections of the TOML file."""
 
     image: ImageSettings = ImageSettings()
     tui: TuiSettings = TuiSettings()
+    cli: CliSettings = CliSettings()
+
+
+def dump(settings: Settings) -> str:
+    """Render settings as TOML text, one section per model."""
+    lines: list[str] = []
+    for section, values in settings.model_dump().items():
+        lines.append(f"[{section}]")
+        lines.extend(f"{key} = {json.dumps(value)}" for key, value in values.items())
+        lines.append("")
+    return "\n".join(lines)
 
 
 def config_path() -> Path:

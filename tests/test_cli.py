@@ -48,7 +48,7 @@ def test_show_json_is_pipeable() -> None:
     """--json prints only a JSON document."""
     result = runner.invoke(app, ["show", "614", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert data["num"] == 614
     assert data["explanation_revid"] == 216714
 
@@ -81,14 +81,14 @@ def test_search_lists_matches() -> None:
     assert result.exit_code == 0
     assert "614" in result.output
     assert "Woodpecker" in result.output
-    data = json.loads(runner.invoke(app, ["search", "woodpeckr", "--json"]).output)
+    data = json.loads(runner.invoke(app, ["search", "woodpeckr", "--json"]).stdout)
     assert [comic["num"] for comic in data] == [614]
 
 
 def test_explain_prints_text() -> None:
     """Explain prints the plain-text explanation."""
     result = runner.invoke(app, ["explain", "614"])
-    assert result.output.startswith("Beret Guy observes a woodpecker")
+    assert result.stdout.startswith("Beret Guy observes a woodpecker")
 
 
 def test_sync_reports_count(fake_client: FakeSites) -> None:
@@ -117,7 +117,7 @@ def test_db_option_is_used(tmp_path: Path) -> None:
 
 def test_explain_json() -> None:
     """Explain --json wraps the text in an object."""
-    data = json.loads(runner.invoke(app, ["explain", "614", "--json"]).output)
+    data = json.loads(runner.invoke(app, ["explain", "614", "--json"]).stdout)
     assert data["num"] == 614
     assert data["explanation"].startswith("Beret Guy")
 
@@ -180,18 +180,52 @@ def test_scale_and_fit_reach_the_renderer(monkeypatch: pytest.MonkeyPatch) -> No
     assert seen == [(3.0, True), (1.0, False)]
 
 
-def test_config_command_prints_path_and_creates_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Xkcd config shows where settings live; --init writes the defaults once."""
+def test_settings_file_is_created_on_first_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Any command creates the commented settings file if it is missing, and says so once."""
     path = tmp_path / "cfg" / "config.toml"
     monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
+    first = runner.invoke(app, ["show", "614", "--json"])
+    assert first.exit_code == 0
+    assert path.exists()
+    assert str(path) in first.stderr
+    assert json.loads(first.stdout)["num"] == 614
+    second = runner.invoke(app, ["show", "614", "--json"])
+    assert second.stderr == ""
+
+
+def test_config_command_shows_path_values_and_defaults(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Xkcd config prints the path and effective TOML; --show-defaults prints the commented defaults."""
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
+    path.write_text("[cli]\nmargin = 3\n", encoding="utf-8")
     result = runner.invoke(app, ["config"])
     assert result.exit_code == 0
     assert str(path) in result.output
-    assert "scale" in result.output
-    assert not path.exists()
-    assert "created" in runner.invoke(app, ["config", "--init"]).output
-    assert path.exists()
+    assert "[image]" in result.output
+    assert "margin = 3" in result.output
+    defaults = runner.invoke(app, ["config", "--show-defaults"]).output
+    assert defaults.startswith("# xkcdkit settings")
+    assert "margin = 1" in defaults
     assert "exists" in runner.invoke(app, ["config", "--init"]).output
+
+
+def test_margin_frames_the_card(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The default margin pads the output; margin = 0 in the file gives a tight layout."""
+    path = tmp_path / "config.toml"
+    monkeypatch.setenv("XKCDKIT_CONFIG", str(path))
+    padded = [line.rstrip() for line in runner.invoke(app, ["show", "614"]).stdout.split("\n")]
+    assert padded[0] == ""
+    assert padded[1].startswith("  ╭")
+    path.write_text("[cli]\nmargin = 0\n", encoding="utf-8")
+    tight = runner.invoke(app, ["show", "614"]).stdout
+    assert tight.startswith("╭")
+
+
+def test_shell_completion_is_offered() -> None:
+    """Typer's completion installer is enabled for bash, zsh, fish and PowerShell."""
+    assert "--install-completion" in runner.invoke(app, ["--help"]).output
 
 
 def test_ctrl_c_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:

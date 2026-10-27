@@ -5,6 +5,7 @@ import sys
 
 from PIL import Image as PILImage
 from rich.console import Group, RenderableType
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
 
@@ -52,6 +53,13 @@ def comic_image(data: bytes, scale: float = 1.0, fit: bool = False) -> Renderabl
         picture = picture.resize((round(picture.width * scale), round(picture.height * scale)))
     renderable = Image(picture)
     return renderable
+
+
+def framed(renderables: list[RenderableType], margin: int) -> RenderableType:
+    """Stack renderables with ``margin`` blank lines above and below and twice that at the sides."""
+    if margin == 0:
+        return Group(*renderables)
+    return Padding(Group(*renderables), (margin, margin * 2))
 
 
 def can_draw() -> bool:

@@ -110,9 +110,11 @@ xkcd latest --fit
 
 ### Settings file
 
-Defaults for these live in a small TOML file. `xkcd config` prints its
-location and the current values; `xkcd config --init` writes a commented
-file with every key:
+Defaults for these live in a small TOML file that the first run creates for
+you, with every key and a comment explaining it. `xkcd config` prints its
+location and the values in effect; `xkcd config --show-defaults` prints the
+default file, which is also the complete list of keys. Anything missing from
+your file keeps its default, so upgrading never requires editing it.
 
 | Platform | Location |
 | -------- | -------- |
@@ -129,9 +131,21 @@ fit = false      # CLI: fill the terminal instead
 
 [tui]
 image_pane = 3   # browser: image pane height relative to the text pane (1 to 8)
+
+[cli]
+margin = 1       # blank space around a printed comic; 0 for a tight layout
 ```
 
 Command line flags always win over the file.
+
+### Shell completion
+
+```sh
+xkcd --install-completion   # bash, zsh, fish or PowerShell, detected from your shell
+xkcd --show-completion      # print the script instead, to install it yourself
+```
+
+Open a new shell afterwards.
 
 ### The browser
 
